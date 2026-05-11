@@ -11,3 +11,4 @@ logs/
 *.bak
 temp/
 .claude/
+CLAUDE.md
