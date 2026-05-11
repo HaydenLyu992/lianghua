@@ -200,7 +200,18 @@ class StockAnalyzer:
 
     def _get_stock_name(self, code: str) -> str:
         try:
-            df = self.client.get_realtime_quote(code)
-            return df.get("名称", code)
+            df = self.client.get_spot_df()
+            # 先精确匹配代码
+            row = df[df["代码"] == code]
+            if row.empty:
+                # 模糊匹配（中文名或部分代码）
+                clean = code.replace("sz", "").replace("sh", "").replace("bj", "")
+                row = df[
+                    df["代码"].astype(str).str.contains(clean, na=False)
+                    | df["名称"].astype(str).str.contains(code, na=False)
+                ]
+            if not row.empty:
+                return str(row.iloc[0].get("名称", code))
+            return code
         except Exception:
             return code

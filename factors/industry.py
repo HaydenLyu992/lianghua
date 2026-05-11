@@ -51,4 +51,5 @@ class IndustryFactor(FactorBase):
 
     def _top_sectors(self, df, n: int) -> list[str]:
         sorted_df = df.sort_values("涨跌幅", ascending=n < 0)
-        return sorted_df["板块名称"].head(abs(n)).tolist()
+        name_col = next((c for c in df.columns if c in ("板块", "板块名称")), "板块")
+        return sorted_df[name_col].head(abs(n)).tolist()

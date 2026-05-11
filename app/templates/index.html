@@ -17,11 +17,15 @@
                 class="search-input"
                 autocomplete="off"
                 hx-get="/api/suggest"
-                hx-trigger="keyup changed delay:300ms"
+                hx-trigger="keyup changed delay:200ms"
                 hx-target="#search-suggestions"
                 hx-swap="innerHTML"
             >
-            <div id="search-suggestions" class="search-suggestions"></div>
+            <div id="search-suggestions" class="search-suggestions" style="display:none">
+                <div id="suggest-spinner" class="suggest-spinner">
+                    <span class="spinner-dot"></span> 匹配中...
+                </div>
+            </div>
         </div>
         <button type="submit" class="btn-primary">开始分析</button>
     </form>
@@ -52,19 +56,52 @@
 
 {% block scripts %}
 <script>
+const input = document.querySelector('[name="code"]');
+const suggBox = document.getElementById('search-suggestions');
+
+// 输入时立即显示下拉框
+input.addEventListener('input', function() {
+    if (this.value.trim().length >= 1) {
+        suggBox.style.display = 'block';
+        // 显示 spinner 直到 HTMX 返回结果
+        if (!suggBox.querySelector('.suggest-item') && !suggBox.querySelector('.suggest-empty')) {
+            suggBox.innerHTML = '<div class="suggest-spinner"><span class="spinner-dot"></span> 匹配中...</div>';
+        }
+    } else {
+        suggBox.style.display = 'none';
+        suggBox.innerHTML = '';
+    }
+});
+
+// HTMX 返回后，如果无结果则保持 spinner
+document.body.addEventListener('htmx:afterSwap', function(e) {
+    if (e.detail.target.id === 'search-suggestions') {
+        if (input.value.trim().length >= 1) {
+            suggBox.style.display = 'block';
+            // 如果返回空（无匹配项且无提示），保持 spinner
+            if (!suggBox.querySelector('.suggest-item') && !suggBox.querySelector('.suggest-empty')) {
+                suggBox.innerHTML = '<div class="suggest-spinner"><span class="spinner-dot"></span> 匹配中...</div>';
+            }
+        }
+    }
+});
+
 // Click suggestion to fill search input and submit
 document.body.addEventListener('click', function(e) {
     if (e.target.closest('.suggest-item')) {
         const item = e.target.closest('.suggest-item');
-        document.querySelector('[name="code"]').value = item.dataset.code;
-        document.getElementById('search-suggestions').innerHTML = '';
+        input.value = item.dataset.code;
+        suggBox.innerHTML = '';
+        suggBox.style.display = 'none';
         document.getElementById('search-form').submit();
     }
 });
+
 // Hide suggestions on outside click
 document.addEventListener('click', function(e) {
     if (!e.target.closest('.search-wrapper')) {
-        document.getElementById('search-suggestions').innerHTML = '';
+        suggBox.innerHTML = '';
+        suggBox.style.display = 'none';
     }
 });
 </script>

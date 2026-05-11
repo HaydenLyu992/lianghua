@@ -511,7 +511,7 @@ class AkShareClient:
 
     @_retry(max_attempts=AKSHARE_RETRY_MAX, base_delay=AKSHARE_RETRY_DELAY)
     def _fetch_industry(self) -> pd.DataFrame:
-        return ak.stock_board_industry_index_ths()
+        return ak.stock_board_industry_summary_ths()
 
     # ── 宏观 ──
 

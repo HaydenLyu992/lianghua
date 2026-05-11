@@ -4,8 +4,11 @@
 {% block content %}
 <div class="analysis-header">
     <h1>
-        {{ report.code }}
-        <span id="stock-name">{{ report.name }}</span>
+        {% if report.code != report.name %}
+            {{ report.code }} <span id="stock-name">{{ report.name }}</span>
+        {% else %}
+            <span id="stock-name">{{ report.name }}</span>
+        {% endif %}
     </h1>
     <div class="analysis-score-badge">
         <span class="score-number">{{ report.score }}</span>

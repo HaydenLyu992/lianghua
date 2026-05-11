@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+import pandas as pd
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -44,10 +45,13 @@ async def analyze_page(request: Request, code: str = ""):
     try:
         df = _ak.get_daily_kline(code)
         if not df.empty:
+            # 兼容腾讯(英文列名)和东方财富(中文列名)两种K线格式
+            date_col = next((c for c in df.columns if c in ("date", "日期", "时间")), df.columns[0])
+            close_col = next((c for c in df.columns if c in ("close", "收盘")), df.columns[3])
             df = df.tail(60)
             kline_data = {
-                "dates": df["日期"].astype(str).tolist(),
-                "closes": df["收盘"].astype(float).round(2).tolist(),
+                "dates": df[date_col].astype(str).tolist(),
+                "closes": pd.to_numeric(df[close_col], errors="coerce").round(2).tolist(),
             }
     except Exception as e:
         logger.warning("K-line fetch failed for %s: %s", code, e)
@@ -105,7 +109,8 @@ async def api_suggest(code: str = "", q: str = ""):
     ].head(8)
 
     if matches.empty:
-        return HTMLResponse("<div class='suggest-empty'>无匹配结果</div>")
+        # 无匹配时返回 spinner，前端保持加载态等待继续输入
+        return HTMLResponse("<div class='suggest-spinner'><span class='spinner-dot'></span> 匹配中...</div>")
 
     items = "".join(
         f"<div class='suggest-item' data-code='{r['代码']}'>{r['代码']} — {r['名称']}</div>"

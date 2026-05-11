@@ -77,7 +77,11 @@ class SentimentFactor(FactorBase):
 
     def _score_technical(self, df: pd.DataFrame) -> dict[str, int]:
         checks = {}
-        close = df["收盘"].astype(float).values
+        # 兼容腾讯(close)和东方财富(收盘)两种列名
+        close_col = next((c for c in df.columns if c in ("close", "收盘")), None)
+        if close_col is None:
+            return checks
+        close = df[close_col].astype(float).values
 
         # MA trend
         if len(close) >= 20:
