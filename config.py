@@ -15,7 +15,6 @@ DATABASE_URL = os.getenv(
 )
 
 # --- Data Sources ---
-TUSHARE_TOKEN = os.getenv("TUSHARE_TOKEN", "")
 AKSHARE_CACHE_TTL = int(os.getenv("AKSHARE_CACHE_TTL", "300"))  # seconds
 AKSHARE_RETRY_MAX = int(os.getenv("AKSHARE_RETRY_MAX", "3"))
 AKSHARE_RETRY_DELAY = float(os.getenv("AKSHARE_RETRY_DELAY", "1.0"))  # base seconds
