@@ -516,3 +516,24 @@ body {
     color: #636e72;
     margin-bottom: 1.5rem;
 }
+
+/* ---- pagination ---- */
+.pagination {
+    display: flex;
+    gap: 0.35rem;
+    justify-content: center;
+    margin-top: 1rem;
+}
+
+.page-btn {
+    padding: 0.35rem 0.7rem;
+    border: 1px solid #dfe6e9;
+    background: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: #2d3436;
+}
+
+.page-btn:hover { background: #f0f0f0; }
+.page-btn.active { background: #e94560; color: #fff; border-color: #e94560; }

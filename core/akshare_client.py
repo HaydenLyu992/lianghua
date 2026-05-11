@@ -57,6 +57,14 @@ class AkShareClient:
     def get_northbound_flow(self) -> pd.DataFrame:
         return ak.stock_hsgt_hist_em(symbol="沪深股通")
 
+    def get_northbound_individual(self) -> pd.DataFrame:
+        """北向资金个股流向"""
+        try:
+            return ak.stock_hsgt_individual_em()
+        except Exception:
+            logger.warning("Failed to fetch northbound individual data")
+            return pd.DataFrame()
+
     def get_margin_detail(self) -> pd.DataFrame:
         return ak.stock_margin_detail_sse()
 

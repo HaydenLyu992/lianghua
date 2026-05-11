@@ -43,14 +43,14 @@
 ```bash
 pip install -r requirements.txt
 python run.py                 # 确保已有 PG 容器在运行
-# 访问 http://localhost:8000
+# 访问 http://localhost:3456
 ```
 
 ### 一键部署
 
 ```bash
 docker-compose up -d          # 构建并启动 app + PostgreSQL
-# 访问 http://localhost:8000
+# 访问 http://localhost:3456
 ```
 
 ## 项目结构
@@ -86,7 +86,7 @@ docker-compose up -d
 # 4. 查看运行状态
 docker-compose ps
 
-# 5. 访问 http://目标IP:8000
+# 5. 访问 http://目标IP:3456
 ```
 
 **常用运维命令：**

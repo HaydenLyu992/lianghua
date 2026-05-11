@@ -12,6 +12,7 @@
 <div class="ranking-tabs">
     <button class="tab-btn active" onclick="showTab('inflow')">主力净流入 TOP 50</button>
     <button class="tab-btn" onclick="showTab('outflow')">主力净流出 TOP 50</button>
+    <button class="tab-btn" onclick="showTab('northbound')">北向资金 TOP 20</button>
 </div>
 
 <div id="tab-inflow" class="ranking-tab active">
@@ -25,7 +26,7 @@
                 <th>主力净流入（万元）</th>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="inflow-tbody">
             {% for s in inflow %}
             <tr>
                 <td>{{ loop.index }}</td>
@@ -36,6 +37,9 @@
             {% endfor %}
         </tbody>
     </table>
+    {% if inflow|length > 20 %}
+    <div class="pagination" id="inflow-pager"></div>
+    {% endif %}
     {% else %}
     <p class="placeholder">暂无数据，等待交易时段刷新。</p>
     {% endif %}
@@ -52,13 +56,43 @@
                 <th>主力净流出（万元）</th>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="outflow-tbody">
             {% for s in outflow %}
             <tr>
                 <td>{{ loop.index }}</td>
                 <td><a href="/analyze?code={{ s.code }}">{{ s.code }}</a></td>
                 <td>{{ s.name }}</td>
                 <td class="money-out">{{ '{:+,.0f}'.format(s.main_net) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if outflow|length > 20 %}
+    <div class="pagination" id="outflow-pager"></div>
+    {% endif %}
+    {% else %}
+    <p class="placeholder">暂无数据，等待交易时段刷新。</p>
+    {% endif %}
+</div>
+
+<div id="tab-northbound" class="ranking-tab">
+    {% if northbound %}
+    <table class="ranking-table">
+        <thead>
+            <tr>
+                <th>排名</th>
+                <th>代码</th>
+                <th>名称</th>
+                <th>北向净买入（万元）</th>
+            </tr>
+        </thead>
+        <tbody id="northbound-tbody">
+            {% for s in northbound %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td><a href="/analyze?code={{ s.code }}">{{ s.code }}</a></td>
+                <td>{{ s.name }}</td>
+                <td class="money-in">{{ '{:+,.0f}'.format(s.main_net) }}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -73,11 +107,46 @@
 
 {% block scripts %}
 <script>
+const PAGE_SIZE = 20;
+
 function showTab(tab) {
     document.querySelectorAll('.ranking-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('tab-' + tab).classList.add('active');
     event.target.classList.add('active');
 }
+
+function paginate(tbodyId, pagerId) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    if (rows.length <= PAGE_SIZE) return;
+
+    const totalPages = Math.ceil(rows.length / PAGE_SIZE);
+    let currentPage = 1;
+
+    function render() {
+        rows.forEach(r => r.style.display = 'none');
+        const start = (currentPage - 1) * PAGE_SIZE;
+        const end = start + PAGE_SIZE;
+        rows.slice(start, end).forEach(r => r.style.display = '');
+
+        const pager = document.getElementById(pagerId);
+        if (!pager) return;
+        pager.innerHTML = '';
+        for (let i = 1; i <= totalPages; i++) {
+            const btn = document.createElement('button');
+            btn.textContent = i;
+            btn.className = 'page-btn' + (i === currentPage ? ' active' : '');
+            btn.onclick = function() { currentPage = i; render(); };
+            pager.appendChild(btn);
+        }
+    }
+
+    render();
+}
+
+paginate('inflow-tbody', 'inflow-pager');
+paginate('outflow-tbody', 'outflow-pager');
 </script>
 {% endblock %}

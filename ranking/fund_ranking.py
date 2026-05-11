@@ -42,6 +42,29 @@ class FundRanking:
                 return cols[candidate.lower()]
         return None
 
+    def refresh_northbound(self, top_n: int = 20) -> list[dict]:
+        try:
+            df = self.client.get_northbound_individual()
+            if df.empty:
+                return []
+        except Exception as e:
+            logger.warning("Failed to fetch northbound data: %s", e)
+            return []
+
+        # 按净买入额排序
+        net_col = None
+        cols = {c.lower(): c for c in df.columns}
+        for candidate in ["净买入额", "净买入", "net_buy", "net_inflow"]:
+            if candidate.lower() in cols:
+                net_col = cols[candidate.lower()]
+                break
+        if not net_col:
+            return []
+
+        df["net_val"] = pd.to_numeric(df[net_col], errors="coerce").fillna(0)
+        sorted_df = df.sort_values("net_val", ascending=False)
+        return self._format_rows(sorted_df.head(top_n), "net_val")
+
     def _format_rows(self, df, main_col: str) -> list[dict]:
         results = []
         for _, row in df.iterrows():

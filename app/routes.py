@@ -10,7 +10,7 @@ from core.akshare_client import AkShareClient
 from core.news_fetcher import NewsFetcher
 from analysis.stock_analyzer import StockAnalyzer
 from analysis.llm_analyzer import LLMAnalyzer
-from ranking.scheduler import inflow_ranking, outflow_ranking, last_update
+from ranking.scheduler import inflow_ranking, outflow_ranking, northbound_ranking, last_update
 from backtest.engine import BacktestEngine
 from backtest.strategies import STRATEGIES
 
@@ -65,6 +65,7 @@ async def ranking_page(request: Request):
         "request": request,
         "inflow": inflow_ranking,
         "outflow": outflow_ranking,
+        "northbound": northbound_ranking,
         "last_update": last_update,
     })
 
@@ -129,3 +130,21 @@ async def api_backtest_run(req: BacktestRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/ranking/northbound")
+async def api_ranking_northbound():
+    return {"data": northbound_ranking, "updated": str(last_update)}
+
+
+@router.get("/api/news/{code}")
+async def api_news(code: str):
+    news = _news.fetch_stock_news(code, limit=30)
+    return {"code": code, "news": news}
+
+
+@router.get("/api/limit/{code}")
+async def api_limit(code: str):
+    from analysis.limit_analyzer import LimitAnalyzer
+    la = LimitAnalyzer(_ak)
+    return await la.analyze(code)

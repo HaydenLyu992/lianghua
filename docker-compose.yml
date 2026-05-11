@@ -2,7 +2,7 @@ services:
   app:
     build: .
     ports:
-      - "8000:8000"
+      - "3456:3456"
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:lvhang123@pg:5432/lianghua
       TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
