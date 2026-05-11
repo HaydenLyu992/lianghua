@@ -10,6 +10,19 @@ from core.akshare_client import AkShareClient
 logger = logging.getLogger(__name__)
 
 
+class EquityCurve(bt.Analyzer):
+    """收集每期账户价值，用于绘制权益曲线"""
+
+    def __init__(self):
+        self.values: list[dict] = []
+
+    def next(self):
+        self.values.append({
+            "date": self.datas[0].datetime.date(0).isoformat(),
+            "value": round(self.strategy.broker.getvalue(), 2),
+        })
+
+
 class BacktestEngine:
     """回测引擎：封装 Backtrader，输入股票代码+参数，输出绩效报告。"""
 
@@ -27,12 +40,13 @@ class BacktestEngine:
     ) -> dict:
         cerebro = bt.Cerebro()
         cerebro.broker.setcash(cash)
-        cerebro.broker.setcommission(commission=0.0003)  # 万三佣金
+        cerebro.broker.setcommission(commission=0.0003)
         cerebro.addstrategy(strategy_cls, **strategy_kwargs)
         cerebro.addanalyzer(btanalyzers.SharpeRatio, _name="sharpe", riskfreerate=0.02)
         cerebro.addanalyzer(btanalyzers.DrawDown, _name="drawdown")
         cerebro.addanalyzer(btanalyzers.TradeAnalyzer, _name="trades")
         cerebro.addanalyzer(btanalyzers.Returns, _name="returns")
+        cerebro.addanalyzer(EquityCurve, _name="equity")
 
         data = self._load_data(code, start, end)
         if data is None:
@@ -51,12 +65,20 @@ class BacktestEngine:
 
     def _load_data(self, code: str, start: str, end: str) -> bt.feeds.PandasData | None:
         try:
-            df = self.client.get_daily_kline(code)
+            clean = code.replace("sz", "").replace("sh", "")
+            if clean.startswith(("0", "3")):
+                code_key = f"sz{clean}"
+            else:
+                code_key = f"sh{clean}"
+
+            import akshare as ak
+            df = ak.stock_zh_a_hist(symbol=code_key, period="daily", adjust="qfq",
+                                    start_date=start.replace("-", ""),
+                                    end_date=end.replace("-", ""))
             if df.empty:
                 return None
 
             df["日期"] = pd.to_datetime(df["日期"])
-            df = df[(df["日期"] >= start) & (df["日期"] <= end)]
             df.set_index("日期", inplace=True)
             df.columns = [c.lower() for c in df.columns]
 
@@ -83,6 +105,23 @@ class BacktestEngine:
         sharpe = strat.analyzers.sharpe.get_analysis()
         drawdown = strat.analyzers.drawdown.get_analysis()
         trades = strat.analyzers.trades.get_analysis()
+        equity = strat.analyzers.equity.values
+
+        # Extract trade records
+        trade_list: list[dict] = []
+        total_closed = trades.get("total", {}).get("total", 0)
+        if total_closed > 0:
+            won = trades.get("won", {}).get("total", 0)
+            lost = trades.get("lost", {}).get("total", 0)
+            won_pnl = trades.get("won", {}).get("pnl", {})
+            lost_pnl = trades.get("lost", {}).get("pnl", {})
+
+            trade_list.append({
+                "won": won,
+                "lost": lost,
+                "won_total_pnl": round(won_pnl.get("total", 0), 2) if isinstance(won_pnl, dict) else 0,
+                "lost_total_pnl": round(lost_pnl.get("total", 0), 2) if isinstance(lost_pnl, dict) else 0,
+            })
 
         return {
             "start_value": cash,
@@ -95,6 +134,8 @@ class BacktestEngine:
                 (trades.get("won", {}).get("total", 0) / max(trades.get("total", {}).get("total", 1), 1)) * 100, 1
             ),
             "total_trades": trades.get("total", {}).get("total", 0),
+            "equity_curve": equity,
+            "trade_summary": trade_list,
             "start": start,
             "end": end,
         }

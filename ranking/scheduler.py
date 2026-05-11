@@ -2,14 +2,15 @@ import logging
 from datetime import datetime, time
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from config import RANKING_REFRESH_MINUTES, RANKING_TOP_N
 from core.akshare_client import AkShareClient
+from core.database import AsyncSession, FundFlowSnapshot
 from ranking.fund_ranking import FundRanking
 
 logger = logging.getLogger(__name__)
 
-# 模块级共享数据，路由直接读取
 inflow_ranking: list[dict] = []
 outflow_ranking: list[dict] = []
 northbound_ranking: list[dict] = []
@@ -22,6 +23,30 @@ def is_trading_time() -> bool:
         return False
     t = now.time()
     return time(9, 0) <= t <= time(15, 5)
+
+
+async def _persist_snapshots(rows: list[dict]):
+    if not rows:
+        return
+    try:
+        async with AsyncSession() as session:
+            now = datetime.now()
+            for r in rows:
+                stmt = pg_insert(FundFlowSnapshot).values(
+                    stock_code=r.get("code", ""),
+                    stock_name=r.get("name", ""),
+                    main_net_inflow=r.get("main_net", 0),
+                    super_large_net=r.get("super_large_net"),
+                    large_net=r.get("large_net"),
+                    medium_net=r.get("medium_net"),
+                    small_net=r.get("small_net"),
+                    snapshot_time=now,
+                )
+                stmt = stmt.on_conflict_do_nothing()
+                await session.execute(stmt)
+            await session.commit()
+    except Exception as e:
+        logger.warning("Failed to persist fund flow snapshots: %s", e)
 
 
 async def refresh_rankings():
@@ -41,6 +66,9 @@ async def refresh_rankings():
 
         last_update = datetime.now()
         logger.info("Rankings refreshed: %d inflow, %d outflow, %d northbound", len(inflow), len(outflow), len(nb))
+
+        await _persist_snapshots(inflow)
+        await _persist_snapshots(outflow)
     except Exception as e:
         logger.error("Ranking refresh failed: %s", e)
 

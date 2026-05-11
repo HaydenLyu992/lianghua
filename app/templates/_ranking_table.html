@@ -1,0 +1,28 @@
+{# HTMX partial: 排行榜表格片段，由 /api/ranking/*-html 端点返回 #}
+{% if rows %}
+<table class="ranking-table">
+    <thead>
+        <tr>
+            <th>排名</th>
+            <th>代码</th>
+            <th>名称</th>
+            <th>{{ col_label }}</th>
+        </tr>
+    </thead>
+    <tbody id="{{ tab }}-tbody">
+        {% for s in rows %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td><a href="/analyze?code={{ s.code }}">{{ s.code }}</a></td>
+            <td>{{ s.name }}</td>
+            <td class="{{ money_class }}">{{ '{:+,.0f}'.format(s.main_net) }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% if rows|length > 20 %}
+<div class="pagination" id="{{ tab }}-pager"></div>
+{% endif %}
+{% else %}
+<p class="placeholder">暂无匹配数据。</p>
+{% endif %}

@@ -102,5 +102,27 @@ Charts.createKLine('klineChart',
     {{ kline.closes | tojson }}
 );
 {% endif %}
+
+// 历史记录加载
+(async function() {
+    try {
+        const res = await fetch('/api/history/{{ report.code }}');
+        const data = await res.json();
+        if (data.history && data.history.length > 1) {
+            const container = document.querySelector('.news-section') || document.querySelector('.factors-grid');
+            if (!container) return;
+            const el = document.createElement('div');
+            el.className = 'news-section';
+            el.innerHTML = '<h2>历史记录</h2><div class="history-chips">' +
+                data.history.slice(0, 5).map(h =>
+                    `<span class="history-chip" title="${h.created_at}">
+                        ${h.score}分 <small>${h.signal}</small>
+                    </span>`
+                ).join('') +
+                '</div>';
+            container.insertAdjacentElement('afterend', el);
+        }
+    } catch(e) {}
+})();
 </script>
 {% endblock %}

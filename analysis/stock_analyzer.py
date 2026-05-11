@@ -1,8 +1,10 @@
 import asyncio
+import json
 import logging
 from config import FACTOR_WEIGHTS
 from core.akshare_client import AkShareClient
 from core.news_fetcher import NewsFetcher
+from core.database import AsyncSession, AnalysisHistory
 from factors.fundamental import FundamentalFactor
 from factors.industry import IndustryFactor
 from factors.macro import MacroFactor
@@ -51,7 +53,6 @@ class StockAnalyzer:
         limit_result = None
         for r in results:
             if isinstance(r, tuple):
-                # factor result
                 key, fr = r
                 factor_results[key] = fr
             elif isinstance(r, dict) and "zt_prob" in r:
@@ -78,7 +79,7 @@ class StockAnalyzer:
             "强烈看空"
         )
 
-        return {
+        report = {
             "code": code,
             "name": name or self._get_stock_name(code),
             "score": total_score,
@@ -98,6 +99,32 @@ class StockAnalyzer:
             "limit": limit_result,
             "news": llm_news,
         }
+
+        # 5) 持久化到 analysis_history
+        await self._save_history(code, total_score, factor_results, signal, report)
+
+        return report
+
+    async def _save_history(self, code, total_score, factor_results, signal, report):
+        try:
+            scores = {k: fr.score for k, fr in factor_results.items()}
+            async with AsyncSession() as session:
+                record = AnalysisHistory(
+                    stock_code=code,
+                    score_total=total_score,
+                    score_fund=scores.get("fundamental", 0),
+                    score_ind=scores.get("industry", 0),
+                    score_macro=scores.get("macro", 0),
+                    score_flow=scores.get("fund_flow", 0),
+                    score_sent=scores.get("sentiment", 0),
+                    score_geo=scores.get("geo_external", 0),
+                    signal=signal,
+                    report_json=report,
+                )
+                session.add(record)
+                await session.commit()
+        except Exception as e:
+            logger.warning("Failed to save analysis history: %s", e)
 
     async def _safe_factor(self, key: str, factor, code: str, name: str):
         try:

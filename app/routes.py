@@ -67,6 +67,11 @@ async def ranking_page(request: Request):
         "outflow": outflow_ranking,
         "northbound": northbound_ranking,
         "last_update": last_update,
+        # Initial table render variables
+        "rows": inflow_ranking,
+        "tab": "inflow",
+        "col_label": "主力净流入（万元）",
+        "money_class": "money-in",
     })
 
 
@@ -79,6 +84,33 @@ async def backtest_page(request: Request):
 
 
 # ── API 路由 ───────────────────────────────────
+
+@router.get("/api/suggest")
+async def api_suggest(q: str = ""):
+    """搜索建议：模糊匹配股票代码/名称"""
+    if len(q) < 1:
+        return ""
+    try:
+        df = _ak.get_spot_df()
+        if df.empty:
+            return "<div class='suggest-empty'>暂无数据</div>"
+    except Exception:
+        return "<div class='suggest-empty'>搜索服务暂不可用</div>"
+
+    q_lower = q.strip().lower()
+    matches = df[
+        df["代码"].astype(str).str.contains(q_lower, na=False)
+        | df["名称"].astype(str).str.contains(q_lower, na=False)
+    ].head(8)
+
+    if matches.empty:
+        return "<div class='suggest-empty'>无匹配结果</div>"
+
+    items = "".join(
+        f"<div class='suggest-item' data-code='{r['代码']}'>{r['代码']} — {r['名称']}</div>"
+        for _, r in matches.iterrows()
+    )
+    return items
 
 @router.get("/api/analyze/{code}")
 async def api_analyze(code: str):
@@ -95,6 +127,55 @@ async def api_ranking_outflow():
     return {"data": outflow_ranking, "updated": str(last_update)}
 
 
+@router.get("/api/ranking/northbound")
+async def api_ranking_northbound():
+    return {"data": northbound_ranking, "updated": str(last_update)}
+
+
+@router.get("/api/ranking/inflow-html", response_class=HTMLResponse)
+async def ranking_inflow_html(request: Request, q: str = ""):
+    """HTMX 局部刷新：主力净流入表格"""
+    data = _filter_ranking(inflow_ranking, q)
+    return templates.TemplateResponse("_ranking_table.html", {
+        "request": request,
+        "rows": data,
+        "tab": "inflow",
+        "col_label": "主力净流入（万元）",
+        "money_class": "money-in",
+    })
+
+
+@router.get("/api/ranking/outflow-html", response_class=HTMLResponse)
+async def ranking_outflow_html(request: Request, q: str = ""):
+    data = _filter_ranking(outflow_ranking, q)
+    return templates.TemplateResponse("_ranking_table.html", {
+        "request": request,
+        "rows": data,
+        "tab": "outflow",
+        "col_label": "主力净流出（万元）",
+        "money_class": "money-out",
+    })
+
+
+@router.get("/api/ranking/northbound-html", response_class=HTMLResponse)
+async def ranking_northbound_html(request: Request, q: str = ""):
+    data = _filter_ranking(northbound_ranking, q)
+    return templates.TemplateResponse("_ranking_table.html", {
+        "request": request,
+        "rows": data,
+        "tab": "northbound",
+        "col_label": "北向净买入（万元）",
+        "money_class": "money-in",
+    })
+
+
+def _filter_ranking(data: list[dict], q: str) -> list[dict]:
+    if not q:
+        return data
+    q = q.strip()
+    return [r for r in data if q in r.get("code", "") or q in r.get("name", "")]
+
+
 class BacktestRequest(BaseModel):
     code: str
     strategy: str = "ma_cross"
@@ -107,6 +188,9 @@ class BacktestRequest(BaseModel):
     holding: int = 10
     period: int = 20
     threshold: float = 0.05
+    oversold: int = 30
+    overbought: int = 70
+    devfactor: float = 2.0
 
 
 @router.post("/api/backtest/run")
@@ -132,15 +216,41 @@ async def api_backtest_run(req: BacktestRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/ranking/northbound")
-async def api_ranking_northbound():
-    return {"data": northbound_ranking, "updated": str(last_update)}
-
-
 @router.get("/api/news/{code}")
 async def api_news(code: str):
     news = _news.fetch_stock_news(code, limit=30)
     return {"code": code, "news": news}
+
+
+@router.get("/api/history/{code}")
+async def api_history(code: str):
+    """查询最近20条分析历史记录"""
+    from core.database import AsyncSession, AnalysisHistory
+    from sqlalchemy import select
+    try:
+        async with AsyncSession() as session:
+            stmt = (
+                select(AnalysisHistory)
+                .where(AnalysisHistory.stock_code == code)
+                .order_by(AnalysisHistory.created_at.desc())
+                .limit(20)
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+            return {
+                "code": code,
+                "history": [
+                    {
+                        "score": r.score_total,
+                        "signal": r.signal,
+                        "created_at": r.created_at.isoformat(),
+                    }
+                    for r in rows
+                ],
+            }
+    except Exception as e:
+        logger.warning("Failed to fetch history for %s: %s", code, e)
+        return {"code": code, "history": [], "error": str(e)}
 
 
 @router.get("/api/limit/{code}")

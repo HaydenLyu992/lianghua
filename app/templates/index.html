@@ -6,15 +6,23 @@
     <h1>A股多因子分析系统</h1>
     <p class="subtitle">从基本面、行业、宏观、资金流向、情绪技术、地缘 6 个维度综合研判个股涨跌趋势</p>
 
-    <form action="/analyze" method="get" class="search-form">
-        <input
-            type="text"
-            name="code"
-            placeholder="输入股票代码或名称，如 000001、平安银行"
-            required
-            autofocus
-            class="search-input"
-        >
+    <form action="/analyze" method="get" class="search-form" id="search-form">
+        <div class="search-wrapper">
+            <input
+                type="text"
+                name="code"
+                placeholder="输入股票代码或名称，如 000001、平安银行"
+                required
+                autofocus
+                class="search-input"
+                autocomplete="off"
+                hx-get="/api/suggest"
+                hx-trigger="keyup changed delay:300ms"
+                hx-target="#search-suggestions"
+                hx-swap="innerHTML"
+            >
+            <div id="search-suggestions" class="search-suggestions"></div>
+        </div>
         <button type="submit" class="btn-primary">开始分析</button>
     </form>
 
@@ -40,4 +48,24 @@
         <a href="/analyze?code=002594">比亚迪</a>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Click suggestion to fill search input and submit
+document.body.addEventListener('click', function(e) {
+    if (e.target.closest('.suggest-item')) {
+        const item = e.target.closest('.suggest-item');
+        document.querySelector('[name="code"]').value = item.dataset.code;
+        document.getElementById('search-suggestions').innerHTML = '';
+        document.getElementById('search-form').submit();
+    }
+});
+// Hide suggestions on outside click
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.search-wrapper')) {
+        document.getElementById('search-suggestions').innerHTML = '';
+    }
+});
+</script>
 {% endblock %}

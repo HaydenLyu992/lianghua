@@ -17,6 +17,9 @@ DATABASE_URL = os.getenv(
 # --- Data Sources ---
 TUSHARE_TOKEN = os.getenv("TUSHARE_TOKEN", "")
 AKSHARE_CACHE_TTL = int(os.getenv("AKSHARE_CACHE_TTL", "300"))  # seconds
+AKSHARE_RETRY_MAX = int(os.getenv("AKSHARE_RETRY_MAX", "3"))
+AKSHARE_RETRY_DELAY = float(os.getenv("AKSHARE_RETRY_DELAY", "1.0"))  # base seconds
+AKSHARE_RATE_LIMIT = float(os.getenv("AKSHARE_RATE_LIMIT", "0.5"))  # min seconds between calls
 
 # --- LLM (DeepSeek，强制启用) ---
 LLM_API_KEY = os.getenv("LLM_API_KEY")

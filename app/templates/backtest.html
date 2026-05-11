@@ -23,7 +23,6 @@
     </div>
 
     <div id="strategy-params" class="form-row">
-        <!-- dynamically filled -->
     </div>
 
     <button type="submit" class="btn-primary" id="run-btn">开始回测</button>
@@ -32,6 +31,14 @@
 <div id="backtest-result" style="display:none;">
     <h2>回测结果</h2>
     <div class="result-grid" id="result-metrics"></div>
+    <div id="equity-section" style="display:none;">
+        <h3 class="chart-title">权益曲线</h3>
+        <canvas id="equityChart" width="700" height="350"></canvas>
+    </div>
+    <div id="trade-section" style="display:none;">
+        <h3>交易概况</h3>
+        <div id="trade-summary"></div>
+    </div>
     <div class="result-error" id="result-error" style="display:none;"></div>
 </div>
 
@@ -53,6 +60,15 @@ const strategyParams = {
     mean_rev: [
         {name:'period', label:'均值周期', value:20, type:'number'},
         {name:'threshold', label:'阈值', value:0.05, type:'number', step:0.01}
+    ],
+    rsi: [
+        {name:'period', label:'RSI周期', value:14, type:'number'},
+        {name:'oversold', label:'超卖阈值', value:30, type:'number'},
+        {name:'overbought', label:'超买阈值', value:70, type:'number'}
+    ],
+    bollinger: [
+        {name:'period', label:'布林周期', value:20, type:'number'},
+        {name:'devfactor', label:'标准差倍数', value:2.0, type:'number', step:0.1}
     ]
 };
 
@@ -63,8 +79,9 @@ document.querySelector('[name="strategy"]').addEventListener('change', function(
         `<label>${p.label} <input type="${p.type}" name="${p.name}" value="${p.value}" step="${p.step||1}"></label>`
     ).join('');
 });
-// trigger initial
 document.querySelector('[name="strategy"]').dispatchEvent(new Event('change'));
+
+let equityChart = null;
 
 async function runBacktest(e) {
     e.preventDefault();
@@ -76,6 +93,11 @@ async function runBacktest(e) {
     const fd = new FormData(form);
     const body = Object.fromEntries(fd.entries());
     body.cash = parseFloat(body.cash);
+    ['period','oversold','overbought','fast','slow','lookback','holding'].forEach(k => {
+        if (body[k]) body[k] = parseInt(body[k]);
+    });
+    if (body.threshold) body.threshold = parseFloat(body.threshold);
+    if (body.devfactor) body.devfactor = parseFloat(body.devfactor);
 
     const res = await fetch('/api/backtest/run', {
         method: 'POST',
@@ -92,6 +114,8 @@ async function runBacktest(e) {
         document.getElementById('result-error').style.display = 'block';
         document.getElementById('result-error').textContent = data.error;
         document.getElementById('result-metrics').innerHTML = '';
+        document.getElementById('equity-section').style.display = 'none';
+        document.getElementById('trade-section').style.display = 'none';
         return;
     }
 
@@ -106,6 +130,42 @@ async function runBacktest(e) {
     ].map(m =>
         `<div class="metric-card"><span class="metric-value ${m.cls||''}">${m.value}</span><span class="metric-label">${m.label}</span></div>`
     ).join('');
+
+    // Equity curve chart
+    if (data.equity_curve && data.equity_curve.length > 0) {
+        document.getElementById('equity-section').style.display = 'block';
+        const dates = data.equity_curve.map(p => p.date);
+        const values = data.equity_curve.map(p => p.value);
+        if (equityChart) equityChart.destroy();
+        equityChart = Charts.createLine('equityChart', dates, [
+            {
+                label: '账户权益',
+                data: values,
+                borderColor: '#e94560',
+                backgroundColor: 'rgba(233,69,96,0.05)',
+                fill: true,
+                tension: 0.1,
+                pointRadius: 0,
+            }
+        ]);
+    } else {
+        document.getElementById('equity-section').style.display = 'none';
+    }
+
+    // Trade summary
+    if (data.trade_summary && data.trade_summary.length > 0) {
+        document.getElementById('trade-section').style.display = 'block';
+        const ts = data.trade_summary[0];
+        document.getElementById('trade-summary').innerHTML =
+            `<div class="result-grid">
+                <div class="metric-card"><span class="metric-value positive">${ts.won}</span><span class="metric-label">盈利次数</span></div>
+                <div class="metric-card"><span class="metric-value negative">${ts.lost}</span><span class="metric-label">亏损次数</span></div>
+                <div class="metric-card"><span class="metric-value positive">¥${(ts.won_total_pnl||0).toLocaleString()}</span><span class="metric-label">盈利总额</span></div>
+                <div class="metric-card"><span class="metric-value negative">¥${(ts.lost_total_pnl||0).toLocaleString()}</span><span class="metric-label">亏损总额</span></div>
+            </div>`;
+    } else {
+        document.getElementById('trade-section').style.display = 'none';
+    }
 }
 </script>
 {% endblock %}

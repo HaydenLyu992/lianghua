@@ -56,8 +56,43 @@ class MeanReversion(bt.Strategy):
             self.sell()
 
 
+class RSIStrategy(bt.Strategy):
+    """RSI 超买超卖策略"""
+    params = (("period", 14), ("oversold", 30), ("overbought", 70))
+
+    def __init__(self):
+        self.rsi = bt.ind.RSI(self.data.close, period=self.params.period)
+
+    def next(self):
+        if not self.position:
+            if self.rsi[0] < self.params.oversold:
+                self.buy()
+        elif self.rsi[0] > self.params.overbought:
+            self.sell()
+
+
+class BollingerBreakout(bt.Strategy):
+    """布林带突破策略"""
+    params = (("period", 20), ("devfactor", 2.0))
+
+    def __init__(self):
+        self.bb_top = bt.ind.BollingerBands(self.data.close, period=self.params.period,
+                                            devfactor=self.params.devfactor).top
+        self.bb_bot = bt.ind.BollingerBands(self.data.close, period=self.params.period,
+                                            devfactor=self.params.devfactor).bot
+
+    def next(self):
+        if not self.position:
+            if self.data.close[0] > self.bb_top[-1]:
+                self.buy()
+        elif self.data.close[0] < self.bb_bot[-1]:
+            self.sell()
+
+
 STRATEGIES = {
     "ma_cross": {"cls": MACrossover, "label": "均线金叉", "params": ["fast", "slow"]},
     "momentum": {"cls": MomentumBreakout, "label": "动量突破", "params": ["lookback", "holding"]},
     "mean_rev": {"cls": MeanReversion, "label": "均值回归", "params": ["period", "threshold"]},
+    "rsi": {"cls": RSIStrategy, "label": "RSI超买超卖", "params": ["period", "oversold", "overbought"]},
+    "bollinger": {"cls": BollingerBreakout, "label": "布林带突破", "params": ["period", "devfactor"]},
 }

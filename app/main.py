@@ -4,14 +4,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-
-from config import DATABASE_URL, BASE_DIR
-from core.database import Base
+from config import BASE_DIR
+from core.database import Base, engine
 from ranking.scheduler import start_scheduler, scheduler
 
-engine = create_async_engine(DATABASE_URL, echo=False)
-AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
 templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "templates"))
 
 

@@ -67,6 +67,7 @@ class FundRanking:
 
     def _format_rows(self, df, main_col: str) -> list[dict]:
         results = []
+        cols_lower = {c.lower(): c for c in df.columns}
         for _, row in df.iterrows():
             name_col = next((c for c in row.index if "名称" in c or "name" in c.lower()), None)
             code_col = next((c for c in row.index if "代码" in c or "code" in c.lower()), None)
@@ -74,5 +75,18 @@ class FundRanking:
                 "code": str(row.get(code_col, "")),
                 "name": str(row.get(name_col, "")),
                 "main_net": float(row.get(main_col, 0)),
+                "super_large_net": self._safe_float(row, cols_lower, "超大单"),
+                "large_net": self._safe_float(row, cols_lower, "大单"),
+                "medium_net": self._safe_float(row, cols_lower, "中单"),
+                "small_net": self._safe_float(row, cols_lower, "小单"),
             })
         return results
+
+    def _safe_float(self, row, cols_lower: dict, keyword: str) -> float | None:
+        col = cols_lower.get(keyword.lower())
+        if col:
+            try:
+                return float(row.get(col, 0))
+            except (ValueError, TypeError):
+                pass
+        return None

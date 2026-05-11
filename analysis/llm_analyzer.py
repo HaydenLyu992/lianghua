@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Optional
 from openai import AsyncOpenAI
 
@@ -50,6 +51,22 @@ class LLMAnalyzer:
         content = response.choices[0].message.content or "[]"
         content = content.strip()
         if content.startswith("```"):
-            content = content.split("\n", 1)[1]
-            content = content.rsplit("\n```", 1)[0]
-        return json.loads(content)
+            parts = content.split("\n", 1)
+            content = parts[1] if len(parts) > 1 else content
+            content = content.rsplit("\n```", 1)[0] if content.endswith("```") else content.rstrip("`")
+        return self._safe_json_parse(content)
+
+    def _safe_json_parse(self, content: str) -> list[dict]:
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            pass
+        # 尝试用正则提取 JSON 数组
+        match = re.search(r'\[.*\]', content, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+        logger.warning("LLM returned unparseable content: %s", content[:200])
+        return []

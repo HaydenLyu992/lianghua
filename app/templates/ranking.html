@@ -3,103 +3,42 @@
 
 {% block content %}
 <h1>资金流向排行榜</h1>
-{% if last_update %}
-<p class="update-time">最后更新: {{ last_update.strftime('%H:%M:%S') }}（交易时段每5分钟刷新）</p>
-{% else %}
-<p class="update-time">等待首次数据刷新...</p>
-{% endif %}
-
-<div class="ranking-tabs">
-    <button class="tab-btn active" onclick="showTab('inflow')">主力净流入 TOP 50</button>
-    <button class="tab-btn" onclick="showTab('outflow')">主力净流出 TOP 50</button>
-    <button class="tab-btn" onclick="showTab('northbound')">北向资金 TOP 20</button>
+<div class="ranking-status-bar">
+    <span id="update-info">
+        {% if last_update %}
+        最后更新: <strong>{{ last_update.strftime('%H:%M:%S') }}</strong>
+        {% else %}
+        等待首次数据刷新...
+        {% endif %}
+    </span>
+    <span id="countdown" class="countdown"></span>
 </div>
 
-<div id="tab-inflow" class="ranking-tab active">
-    {% if inflow %}
-    <table class="ranking-table">
-        <thead>
-            <tr>
-                <th>排名</th>
-                <th>代码</th>
-                <th>名称</th>
-                <th>主力净流入（万元）</th>
-            </tr>
-        </thead>
-        <tbody id="inflow-tbody">
-            {% for s in inflow %}
-            <tr>
-                <td>{{ loop.index }}</td>
-                <td><a href="/analyze?code={{ s.code }}">{{ s.code }}</a></td>
-                <td>{{ s.name }}</td>
-                <td class="money-in">{{ '{:+,.0f}'.format(s.main_net) }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% if inflow|length > 20 %}
-    <div class="pagination" id="inflow-pager"></div>
-    {% endif %}
-    {% else %}
-    <p class="placeholder">暂无数据，等待交易时段刷新。</p>
-    {% endif %}
+<div class="ranking-toolbar">
+    <input
+        type="text"
+        id="ranking-search"
+        class="search-input"
+        placeholder="搜索股票代码或名称..."
+        autocomplete="off"
+    >
+    <div class="ranking-tabs">
+        <button class="tab-btn active" data-tab="inflow">主力净流入 TOP 50</button>
+        <button class="tab-btn" data-tab="outflow">主力净流出 TOP 50</button>
+        <button class="tab-btn" data-tab="northbound">北向资金 TOP 20</button>
+    </div>
 </div>
 
-<div id="tab-outflow" class="ranking-tab">
-    {% if outflow %}
-    <table class="ranking-table">
-        <thead>
-            <tr>
-                <th>排名</th>
-                <th>代码</th>
-                <th>名称</th>
-                <th>主力净流出（万元）</th>
-            </tr>
-        </thead>
-        <tbody id="outflow-tbody">
-            {% for s in outflow %}
-            <tr>
-                <td>{{ loop.index }}</td>
-                <td><a href="/analyze?code={{ s.code }}">{{ s.code }}</a></td>
-                <td>{{ s.name }}</td>
-                <td class="money-out">{{ '{:+,.0f}'.format(s.main_net) }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% if outflow|length > 20 %}
-    <div class="pagination" id="outflow-pager"></div>
-    {% endif %}
-    {% else %}
-    <p class="placeholder">暂无数据，等待交易时段刷新。</p>
-    {% endif %}
+<div id="tab-inflow" class="ranking-tab active" hx-get="/api/ranking/inflow-html" hx-trigger="load, every 60s" hx-swap="innerHTML">
+    {% include "_ranking_table.html" %}
 </div>
 
-<div id="tab-northbound" class="ranking-tab">
-    {% if northbound %}
-    <table class="ranking-table">
-        <thead>
-            <tr>
-                <th>排名</th>
-                <th>代码</th>
-                <th>名称</th>
-                <th>北向净买入（万元）</th>
-            </tr>
-        </thead>
-        <tbody id="northbound-tbody">
-            {% for s in northbound %}
-            <tr>
-                <td>{{ loop.index }}</td>
-                <td><a href="/analyze?code={{ s.code }}">{{ s.code }}</a></td>
-                <td>{{ s.name }}</td>
-                <td class="money-in">{{ '{:+,.0f}'.format(s.main_net) }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <p class="placeholder">暂无数据，等待交易时段刷新。</p>
-    {% endif %}
+<div id="tab-outflow" class="ranking-tab" hx-get="/api/ranking/outflow-html" hx-trigger="revealed" hx-swap="innerHTML">
+    <p class="placeholder">加载中...</p>
+</div>
+
+<div id="tab-northbound" class="ranking-tab" hx-get="/api/ranking/northbound-html" hx-trigger="revealed" hx-swap="innerHTML">
+    <p class="placeholder">加载中...</p>
 </div>
 
 <a href="/" class="back-link">← 返回首页</a>
@@ -108,45 +47,91 @@
 {% block scripts %}
 <script>
 const PAGE_SIZE = 20;
+let currentTab = 'inflow';
+let refreshSeconds = 60;
 
-function showTab(tab) {
+function switchTab(tab) {
+    currentTab = tab;
     document.querySelectorAll('.ranking-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('tab-' + tab).classList.add('active');
-    event.target.classList.add('active');
+    document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+    // Trigger HTMX refresh when switching to a tab
+    const tabEl = document.getElementById('tab-' + tab);
+    if (tabEl) htmx.trigger(tabEl, 'revealed');
+    applyPagination();
 }
 
-function paginate(tbodyId, pagerId) {
-    const tbody = document.getElementById(tbodyId);
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', function() { switchTab(this.dataset.tab); });
+});
+
+// Search: re-fetch filtered table from server
+let searchTimeout;
+document.getElementById('ranking-search').addEventListener('input', function() {
+    clearTimeout(searchTimeout);
+    const q = this.value.trim();
+    searchTimeout = setTimeout(() => {
+        const tabEl = document.getElementById('tab-' + currentTab);
+        const endpoint = '/api/ranking/' + currentTab + '-html?q=' + encodeURIComponent(q);
+        if (tabEl) htmx.ajax('GET', endpoint, {target: tabEl, swap: 'innerHTML'});
+    }, 300);
+});
+
+// Re-apply pagination after HTMX swaps content
+document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.target.closest('.ranking-tab')) {
+        refreshSeconds = 60;
+        applyPagination();
+    }
+});
+
+function applyPagination() {
+    const activeTab = document.querySelector('.ranking-tab.active');
+    if (!activeTab) return;
+    const tbody = activeTab.querySelector('tbody');
     if (!tbody) return;
     const rows = Array.from(tbody.querySelectorAll('tr'));
     if (rows.length <= PAGE_SIZE) return;
 
+    const pager = activeTab.querySelector('.pagination');
+    if (!pager) return;
     const totalPages = Math.ceil(rows.length / PAGE_SIZE);
-    let currentPage = 1;
+    let page = 1;
 
     function render() {
         rows.forEach(r => r.style.display = 'none');
-        const start = (currentPage - 1) * PAGE_SIZE;
-        const end = start + PAGE_SIZE;
-        rows.slice(start, end).forEach(r => r.style.display = '');
-
-        const pager = document.getElementById(pagerId);
-        if (!pager) return;
+        const start = (page - 1) * PAGE_SIZE;
+        rows.slice(start, start + PAGE_SIZE).forEach(r => r.style.display = '');
         pager.innerHTML = '';
         for (let i = 1; i <= totalPages; i++) {
             const btn = document.createElement('button');
             btn.textContent = i;
-            btn.className = 'page-btn' + (i === currentPage ? ' active' : '');
-            btn.onclick = function() { currentPage = i; render(); };
+            btn.className = 'page-btn' + (i === page ? ' active' : '');
+            btn.onclick = function() { page = i; render(); };
             pager.appendChild(btn);
         }
     }
-
     render();
 }
 
-paginate('inflow-tbody', 'inflow-pager');
-paginate('outflow-tbody', 'outflow-pager');
+// Countdown timer
+function updateCountdown() {
+    const el = document.getElementById('countdown');
+    if (!el) return;
+    if (refreshSeconds <= 0) {
+        el.textContent = '刷新中...';
+        return;
+    }
+    const m = Math.floor(refreshSeconds / 60);
+    const s = refreshSeconds % 60;
+    el.textContent = '距下次刷新 ' + m + '分' + s + '秒';
+    refreshSeconds--;
+}
+setInterval(updateCountdown, 1000);
+updateCountdown();
+
+// Initial pagination
+applyPagination();
 </script>
 {% endblock %}

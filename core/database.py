@@ -1,7 +1,17 @@
+import os
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import Column, Integer, String, Float, DateTime, Text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from datetime import datetime
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+asyncpg://postgres:lvhang123@localhost:5432/lianghua",
+)
+
+engine = create_async_engine(DATABASE_URL, echo=False)
+AsyncSession = async_sessionmaker(engine, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):

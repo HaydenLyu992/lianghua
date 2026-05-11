@@ -1,6 +1,7 @@
 import logging
 import numpy as np
 import pandas as pd
+import talib
 
 from factors.base import FactorBase, FactorResult
 from core.akshare_client import AkShareClient
@@ -63,52 +64,44 @@ class SentimentFactor(FactorBase):
     def _score_limit_down(self, df, code: str) -> int:
         mask = df["代码"].astype(str).str.contains(code)
         if not df[mask].empty:
-            return 90  # high downside risk (penalty in parent)
+            return 90
         return 5
 
     def _score_hot(self, df, code: str) -> int:
         total = len(df)
         mask = df["代码"].astype(str).str.contains(code)
         if df[mask].empty:
-            return 40  # not on hot list
+            return 40
         rank = int(df[mask].iloc[0].get("排名", total // 2))
         return int(np.clip(100 - (rank / total) * 100, 0, 100))
 
     def _score_technical(self, df: pd.DataFrame) -> dict[str, int]:
         checks = {}
-        close = df["收盘"].astype(float)
+        close = df["收盘"].astype(float).values
 
         # MA trend
         if len(close) >= 20:
-            ma5 = close.rolling(5).mean().iloc[-1]
-            ma20 = close.rolling(20).mean().iloc[-1]
-            if ma5 > ma20:
-                checks["均线多头"] = 70
-            else:
-                checks["均线空头"] = 30
+            ma5 = talib.SMA(close, timeperiod=5)[-1]
+            ma20 = talib.SMA(close, timeperiod=20)[-1]
+            if not np.isnan(ma5) and not np.isnan(ma20):
+                checks["均线多头"] = 70 if ma5 > ma20 else 30
 
-        # RSI
+        # RSI via TA-Lib
         if len(close) >= 14:
-            delta = close.diff()
-            gain = delta.clip(lower=0).rolling(14).mean().iloc[-1]
-            loss = (-delta.clip(upper=0)).rolling(14).mean().iloc[-1]
-            rs = gain / loss if loss != 0 else 100
-            rsi = 100 - (100 / (1 + rs))
-            if 30 <= rsi <= 70:
-                checks["RSI中性"] = 55
-            elif rsi < 30:
-                checks["RSI超卖"] = 30
-            else:
-                checks["RSI超买"] = 70
+            rsi_vals = talib.RSI(close, timeperiod=14)
+            rsi = rsi_vals[-1]
+            if not np.isnan(rsi):
+                if 30 <= rsi <= 70:
+                    checks["RSI中性"] = 55
+                elif rsi < 30:
+                    checks["RSI超卖"] = 30
+                else:
+                    checks["RSI超买"] = 70
 
-        # MACD
+        # MACD via TA-Lib
         if len(close) >= 26:
-            ema12 = close.ewm(span=12).mean().iloc[-1]
-            ema26 = close.ewm(span=26).mean().iloc[-1]
-            macd = ema12 - ema26
-            if macd > 0:
-                checks["MACD金叉"] = 70
-            else:
-                checks["MACD死叉"] = 30
+            macd, signal_line, hist = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
+            if not np.isnan(macd[-1]):
+                checks["MACD金叉"] = 70 if macd[-1] > signal_line[-1] else 30
 
         return checks
