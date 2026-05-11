@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}良华量化 — A股多因子分析系统{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>A股多因子分析系统</h1>
+    <p class="subtitle">从基本面、行业、宏观、资金流向、情绪技术、地缘 6 个维度综合研判个股涨跌趋势</p>
+
+    <form action="/analyze" method="get" class="search-form">
+        <input
+            type="text"
+            name="code"
+            placeholder="输入股票代码或名称，如 000001、平安银行"
+            required
+            autofocus
+            class="search-input"
+        >
+        <button type="submit" class="btn-primary">开始分析</button>
+    </form>
+
+    <div class="quick-links">
+        <a href="/ranking" class="quick-link-card">
+            <span class="card-icon">📊</span>
+            <span class="card-title">资金流向排行榜</span>
+            <span class="card-desc">实时主力资金净流入/流出 TOP 50</span>
+        </a>
+        <a href="/backtest" class="quick-link-card">
+            <span class="card-icon">📈</span>
+            <span class="card-title">在线回测</span>
+            <span class="card-desc">自定义策略 + 历史数据验证</span>
+        </a>
+    </div>
+
+    <div class="example-stocks">
+        <span>热门标的：</span>
+        <a href="/analyze?code=000001">平安银行</a>
+        <a href="/analyze?code=600519">贵州茅台</a>
+        <a href="/analyze?code=300750">宁德时代</a>
+        <a href="/analyze?code=000858">五粮液</a>
+        <a href="/analyze?code=002594">比亚迪</a>
+    </div>
+</div>
+{% endblock %}

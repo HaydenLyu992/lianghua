@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}在线回测 — 良华量化{% endblock %}
+
+{% block content %}
+<h1>在线回测</h1>
+
+<form id="backtest-form" class="backtest-form" onsubmit="runBacktest(event)">
+    <div class="form-row">
+        <label>股票代码 <input type="text" name="code" value="000001" required></label>
+        <label>初始资金 <input type="number" name="cash" value="100000" step="10000"></label>
+        <label>策略
+            <select name="strategy">
+                {% for key, info in strategies.items() %}
+                <option value="{{ key }}">{{ info.label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+    </div>
+
+    <div class="form-row">
+        <label>开始日期 <input type="date" name="start" value="2024-01-01"></label>
+        <label>结束日期 <input type="date" name="end" value="2025-12-31"></label>
+    </div>
+
+    <div id="strategy-params" class="form-row">
+        <!-- dynamically filled -->
+    </div>
+
+    <button type="submit" class="btn-primary" id="run-btn">开始回测</button>
+</form>
+
+<div id="backtest-result" style="display:none;">
+    <h2>回测结果</h2>
+    <div class="result-grid" id="result-metrics"></div>
+    <div class="result-error" id="result-error" style="display:none;"></div>
+</div>
+
+<a href="/" class="back-link">← 返回首页</a>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/charts.js"></script>
+<script>
+const strategyParams = {
+    ma_cross: [
+        {name:'fast', label:'快线周期', value:5, type:'number'},
+        {name:'slow', label:'慢线周期', value:20, type:'number'}
+    ],
+    momentum: [
+        {name:'lookback', label:'回顾周期', value:20, type:'number'},
+        {name:'holding', label:'持仓周期', value:10, type:'number'}
+    ],
+    mean_rev: [
+        {name:'period', label:'均值周期', value:20, type:'number'},
+        {name:'threshold', label:'阈值', value:0.05, type:'number', step:0.01}
+    ]
+};
+
+document.querySelector('[name="strategy"]').addEventListener('change', function() {
+    const params = strategyParams[this.value] || [];
+    const container = document.getElementById('strategy-params');
+    container.innerHTML = params.map(p =>
+        `<label>${p.label} <input type="${p.type}" name="${p.name}" value="${p.value}" step="${p.step||1}"></label>`
+    ).join('');
+});
+// trigger initial
+document.querySelector('[name="strategy"]').dispatchEvent(new Event('change'));
+
+async function runBacktest(e) {
+    e.preventDefault();
+    const btn = document.getElementById('run-btn');
+    btn.disabled = true;
+    btn.textContent = '回测运行中...';
+
+    const form = document.getElementById('backtest-form');
+    const fd = new FormData(form);
+    const body = Object.fromEntries(fd.entries());
+    body.cash = parseFloat(body.cash);
+
+    const res = await fetch('/api/backtest/run', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    btn.disabled = false;
+    btn.textContent = '开始回测';
+
+    document.getElementById('backtest-result').style.display = 'block';
+
+    if (data.error) {
+        document.getElementById('result-error').style.display = 'block';
+        document.getElementById('result-error').textContent = data.error;
+        document.getElementById('result-metrics').innerHTML = '';
+        return;
+    }
+
+    document.getElementById('result-error').style.display = 'none';
+    document.getElementById('result-metrics').innerHTML = [
+        {label:'总收益率', value: data.total_return + '%', cls: data.total_return >= 0 ? 'positive' : 'negative'},
+        {label:'最终资产', value: '¥' + data.end_value.toLocaleString()},
+        {label:'夏普比率', value: data.sharpe_ratio},
+        {label:'最大回撤', value: data.max_drawdown + '%'},
+        {label:'胜率', value: data.win_rate + '%'},
+        {label:'交易次数', value: data.total_trades},
+    ].map(m =>
+        `<div class="metric-card"><span class="metric-value ${m.cls||''}">${m.value}</span><span class="metric-label">${m.label}</span></div>`
+    ).join('');
+}
+</script>
+{% endblock %}

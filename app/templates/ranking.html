@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}资金流向排行榜 — 良华量化{% endblock %}
+
+{% block content %}
+<h1>资金流向排行榜</h1>
+{% if last_update %}
+<p class="update-time">最后更新: {{ last_update.strftime('%H:%M:%S') }}（交易时段每5分钟刷新）</p>
+{% else %}
+<p class="update-time">等待首次数据刷新...</p>
+{% endif %}
+
+<div class="ranking-tabs">
+    <button class="tab-btn active" onclick="showTab('inflow')">主力净流入 TOP 50</button>
+    <button class="tab-btn" onclick="showTab('outflow')">主力净流出 TOP 50</button>
+</div>
+
+<div id="tab-inflow" class="ranking-tab active">
+    {% if inflow %}
+    <table class="ranking-table">
+        <thead>
+            <tr>
+                <th>排名</th>
+                <th>代码</th>
+                <th>名称</th>
+                <th>主力净流入（万元）</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in inflow %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td><a href="/analyze?code={{ s.code }}">{{ s.code }}</a></td>
+                <td>{{ s.name }}</td>
+                <td class="money-in">{{ '{:+,.0f}'.format(s.main_net) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="placeholder">暂无数据，等待交易时段刷新。</p>
+    {% endif %}
+</div>
+
+<div id="tab-outflow" class="ranking-tab">
+    {% if outflow %}
+    <table class="ranking-table">
+        <thead>
+            <tr>
+                <th>排名</th>
+                <th>代码</th>
+                <th>名称</th>
+                <th>主力净流出（万元）</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in outflow %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td><a href="/analyze?code={{ s.code }}">{{ s.code }}</a></td>
+                <td>{{ s.name }}</td>
+                <td class="money-out">{{ '{:+,.0f}'.format(s.main_net) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="placeholder">暂无数据，等待交易时段刷新。</p>
+    {% endif %}
+</div>
+
+<a href="/" class="back-link">← 返回首页</a>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showTab(tab) {
+    document.querySelectorAll('.ranking-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    event.target.classList.add('active');
+}
+</script>
+{% endblock %}

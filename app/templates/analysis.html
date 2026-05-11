@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}{{ report.code }} {{ report.name }} 分析报告 — 良华量化{% endblock %}
+
+{% block content %}
+<div class="analysis-header">
+    <h1>
+        {{ report.code }}
+        <span id="stock-name">{{ report.name }}</span>
+    </h1>
+    <div class="analysis-score-badge">
+        <span class="score-number">{{ report.score }}</span>
+        <span class="score-label">{{ report.signal }}</span>
+    </div>
+</div>
+
+{% if report.limit %}
+<div class="limit-banner">
+    {% if report.limit.is_zt %}
+    <div class="alert alert-bullish">今日涨停 | 连板 {{ report.limit.streak }} | 封单 {{ report.limit.seal }}亿</div>
+    {% elif report.limit.is_dt %}
+    <div class="alert alert-bearish">今日跌停</div>
+    {% endif %}
+    <span>涨停概率 {{ report.limit.zt_prob }}% ｜ 跌停概率 {{ report.limit.dt_prob }}%</span>
+</div>
+{% endif %}
+
+<!-- 图表区：雷达图 + K线图 -->
+<div class="charts-row">
+    <div class="radar-section">
+        <h3 class="chart-title">六维雷达</h3>
+        <canvas id="radarChart" width="350" height="350"></canvas>
+    </div>
+    {% if kline %}
+    <div class="kline-section">
+        <h3 class="chart-title">近60日走势</h3>
+        <canvas id="klineChart" width="500" height="350"></canvas>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 各因子详情 -->
+<div class="factors-grid">
+    {% for f in report.factors %}
+    <div class="factor-card factor-{{ f.signal }}">
+        <div class="factor-header">
+            <span class="factor-name">{{ f.name }}</span>
+            <span class="factor-weight">权重 {{ f.weight }}%</span>
+        </div>
+        <div class="factor-score">
+            <div class="score-bar-bg">
+                <div class="score-bar-fill score-{{ f.signal }}" style="width: {{ f.score }}%"></div>
+            </div>
+            <span class="factor-score-num">{{ f.score }}</span>
+        </div>
+        {% if f.detail %}
+        <ul class="factor-detail">
+            {% for k, v in f.detail.items() %}
+            <li><span class="detail-key">{{ k }}</span>: {{ v }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% if f.events %}
+        <ul class="factor-events">
+            {% for ev in f.events[:3] %}
+            <li class="event-{{ ev.sentiment }}">{{ ev.title }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<!-- 新闻分析 -->
+{% if report.news %}
+<div class="news-section">
+    <h2>关联新闻</h2>
+    <ul class="news-list">
+        {% for n in report.news %}
+        <li class="news-item news-{{ n.sentiment }}">
+            <span class="news-badge">{{ {'positive':'利好','negative':'利空','neutral':'中性'}.get(n.sentiment, '中性') }}</span>
+            <span class="news-title">{{ n.get('title', n.get('summary', '')) }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<a href="/" class="back-link">← 返回首页</a>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/charts.js"></script>
+<script>
+const report = {{ report | tojson }};
+const labels = report.factors.map(f => f.name);
+const scores = report.factors.map(f => f.score);
+Charts.createRadar('radarChart', labels, scores, '因子评分');
+
+{% if kline %}
+Charts.createKLine('klineChart',
+    {{ kline.dates | tojson }},
+    {{ kline.closes | tojson }}
+);
+{% endif %}
+</script>
+{% endblock %}
