@@ -65,20 +65,15 @@ class BacktestEngine:
 
     def _load_data(self, code: str, start: str, end: str) -> bt.feeds.PandasData | None:
         try:
-            clean = code.replace("sz", "").replace("sh", "")
-            if clean.startswith(("0", "3")):
-                code_key = f"sz{clean}"
-            else:
-                code_key = f"sh{clean}"
-
-            import akshare as ak
-            df = ak.stock_zh_a_hist(symbol=code_key, period="daily", adjust="qfq",
-                                    start_date=start.replace("-", ""),
-                                    end_date=end.replace("-", ""))
+            df = self.client.get_daily_kline(code)
             if df.empty:
                 return None
 
             df["日期"] = pd.to_datetime(df["日期"])
+            df = df[(df["日期"] >= start) & (df["日期"] <= end)]
+            if df.empty:
+                return None
+
             df.set_index("日期", inplace=True)
             df.columns = [c.lower() for c in df.columns]
 

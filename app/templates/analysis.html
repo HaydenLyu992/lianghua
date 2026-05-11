@@ -11,6 +11,10 @@
         <span class="score-number">{{ report.score }}</span>
         <span class="score-label">{{ report.signal }}</span>
     </div>
+    <div class="analysis-actions">
+        <button class="btn-secondary" onclick="downloadPDF()">📥 下载PDF</button>
+        <a href="/" class="btn-secondary">← 返回</a>
+    </div>
 </div>
 
 {% if report.limit %}
@@ -21,6 +25,16 @@
     <div class="alert alert-bearish">今日跌停</div>
     {% endif %}
     <span>涨停概率 {{ report.limit.zt_prob }}% ｜ 跌停概率 {{ report.limit.dt_prob }}%</span>
+</div>
+{% endif %}
+
+<!-- 综合分析摘要 -->
+{% if report.summary %}
+<div class="summary-section">
+    <h2>📋 综合分析</h2>
+    <div class="summary-card">
+        <p class="summary-text">{{ report.summary }}</p>
+    </div>
 </div>
 {% endif %}
 
@@ -39,6 +53,7 @@
 </div>
 
 <!-- 各因子详情 -->
+<h2 class="section-title">各因子详解</h2>
 <div class="factors-grid">
     {% for f in report.factors %}
     <div class="factor-card factor-{{ f.signal }}">
@@ -58,6 +73,9 @@
             <li><span class="detail-key">{{ k }}</span>: {{ v }}</li>
             {% endfor %}
         </ul>
+        {% endif %}
+        {% if f.description %}
+        <p class="factor-desc">{{ f.description }}</p>
         {% endif %}
         {% if f.events %}
         <ul class="factor-events">
@@ -91,6 +109,9 @@
 {% block scripts %}
 <script src="/static/js/charts.js"></script>
 <script>
+// 页面加载完成，关闭loading遮罩
+document.getElementById('loading-overlay').style.display = 'none';
+
 const report = {{ report | tojson }};
 const labels = report.factors.map(f => f.name);
 const scores = report.factors.map(f => f.score);
@@ -124,5 +145,9 @@ Charts.createKLine('klineChart',
         }
     } catch(e) {}
 })();
+
+function downloadPDF() {
+    window.print();
+}
 </script>
 {% endblock %}

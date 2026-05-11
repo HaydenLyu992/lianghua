@@ -6,7 +6,7 @@
     <h1>A股多因子分析系统</h1>
     <p class="subtitle">从基本面、行业、宏观、资金流向、情绪技术、地缘 6 个维度综合研判个股涨跌趋势</p>
 
-    <form action="/analyze" method="get" class="search-form" id="search-form">
+    <form action="/analyze" method="get" class="search-form" id="search-form" onsubmit="document.getElementById('loading-overlay').style.display='flex'">
         <div class="search-wrapper">
             <input
                 type="text"

@@ -79,25 +79,38 @@ class StockAnalyzer:
             "强烈看空"
         )
 
+        factors_with_desc = []
+        for key, fr in factor_results.items():
+            label = self._factor_label(key)
+            weight = FACTOR_WEIGHTS.get(key, 10)
+            factors_with_desc.append({
+                "key": key,
+                "name": label,
+                "score": fr.score,
+                "signal": fr.signal,
+                "weight": weight,
+                "detail": fr.detail,
+                "events": fr.events,
+                "description": self._factor_desc(key, fr.score, fr.signal, fr.detail, weight),
+            })
+
+        stock_name = name or self._get_stock_name(code)
+
+        # 5) LLM 综合分析摘要
+        summary = await self.llm.comprehensive_analysis(
+            code, stock_name, total_score, signal, factors_with_desc,
+            limit_result, llm_news,
+        )
+
         report = {
             "code": code,
-            "name": name or self._get_stock_name(code),
+            "name": stock_name,
             "score": total_score,
             "signal": signal,
-            "factors": [
-                {
-                    "key": key,
-                    "name": self._factor_label(key),
-                    "score": fr.score,
-                    "signal": fr.signal,
-                    "weight": FACTOR_WEIGHTS.get(key, 10),
-                    "detail": fr.detail,
-                    "events": fr.events,
-                }
-                for key, fr in factor_results.items()
-            ],
+            "factors": factors_with_desc,
             "limit": limit_result,
             "news": llm_news,
+            "summary": summary,
         }
 
         # 5) 持久化到 analysis_history
@@ -151,6 +164,39 @@ class StockAnalyzer:
             "sentiment": "情绪技术",
             "geo_external": "地缘",
         }.get(key, key)
+
+    def _factor_desc(self, key: str, score: int, signal: str, detail: dict,
+                     weight: int) -> str:
+        """根据因子类型和得分生成通俗易懂的中文解释"""
+        level = "优秀" if score >= 80 else "良好" if score >= 65 else "一般" if score >= 45 else "偏弱" if score >= 30 else "较差"
+        weight_desc = f"该因子占综合评分的{weight}%权重"
+        signal_cn = {"bullish": "看多信号", "bearish": "看空信号", "neutral": "中性信号"}
+        signal_str = signal_cn.get(signal, "中性")
+
+        base = f"得分{score}分（{level}），发出{signal_str}。{weight_desc}。"
+
+        if key == "fundamental":
+            roe = detail.get("ROE", "N/A") if detail else "N/A"
+            return f"{base} 反映公司盈利能力与成长性。当前ROE为{roe}。得分越高说明财报表现越好，利润增长、高ROE、机构调研活跃均为加分项。"
+
+        elif key == "industry":
+            change = detail.get("行业涨跌幅", "未知") if detail else "未知"
+            return f"{base} 反映所属行业板块的整体热度。当前板块涨跌幅{change}。行业上涨时个股更容易获得板块效应加持。"
+
+        elif key == "macro":
+            pmi = detail.get("PMI", "N/A") if detail else "N/A"
+            return f"{base} 反映宏观经济环境对股市的影响。当前PMI为{pmi}。PMI>50经济扩张利好股市，CPI温和(1-3%)为佳，M2增速和LPR利率也纳入考量。"
+
+        elif key == "fund_flow":
+            return f"{base} 追踪主力资金动向，包括北向资金、融资融券、龙虎榜等。主力持续净流入是强势信号，资金出逃则需警惕。"
+
+        elif key == "sentiment":
+            return f"{base} 综合涨停/跌停板情绪、市场热度排名及均线/RSI/MACD等技术指标。高分意味着市场情绪偏多、技术面走强。"
+
+        elif key == "geo_external":
+            return f"{base} 监测地缘政治风险事件（战争、制裁、贸易摩擦等）对市场的冲击。得分越高说明当前宏观新闻面偏平静，外部风险较低。"
+
+        return base
 
     def _get_stock_name(self, code: str) -> str:
         try:

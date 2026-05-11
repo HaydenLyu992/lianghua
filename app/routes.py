@@ -86,31 +86,32 @@ async def backtest_page(request: Request):
 # ── API 路由 ───────────────────────────────────
 
 @router.get("/api/suggest")
-async def api_suggest(q: str = ""):
+async def api_suggest(code: str = "", q: str = ""):
     """搜索建议：模糊匹配股票代码/名称"""
-    if len(q) < 1:
-        return ""
+    keyword = (code or q).strip()
+    if len(keyword) < 1:
+        return HTMLResponse("")
     try:
         df = _ak.get_spot_df()
         if df.empty:
-            return "<div class='suggest-empty'>暂无数据</div>"
+            return HTMLResponse("<div class='suggest-empty'>数据源暂不可用（AkShare上游连接失败），请直接输入完整代码搜索</div>")
     except Exception:
-        return "<div class='suggest-empty'>搜索服务暂不可用</div>"
+        return HTMLResponse("<div class='suggest-empty'>搜索服务暂不可用</div>")
 
-    q_lower = q.strip().lower()
+    kw_lower = keyword.lower()
     matches = df[
-        df["代码"].astype(str).str.contains(q_lower, na=False)
-        | df["名称"].astype(str).str.contains(q_lower, na=False)
+        df["代码"].astype(str).str.contains(kw_lower, na=False)
+        | df["名称"].astype(str).str.contains(kw_lower, na=False)
     ].head(8)
 
     if matches.empty:
-        return "<div class='suggest-empty'>无匹配结果</div>"
+        return HTMLResponse("<div class='suggest-empty'>无匹配结果</div>")
 
     items = "".join(
         f"<div class='suggest-item' data-code='{r['代码']}'>{r['代码']} — {r['名称']}</div>"
         for _, r in matches.iterrows()
     )
-    return items
+    return HTMLResponse(items)
 
 @router.get("/api/analyze/{code}")
 async def api_analyze(code: str):
