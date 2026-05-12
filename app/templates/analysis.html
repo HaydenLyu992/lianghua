@@ -36,7 +36,7 @@
 <div class="summary-section">
     <h2>📋 综合分析</h2>
     <div class="summary-card">
-        <p class="summary-text">{{ report.summary }}</p>
+        <div class="summary-text markdown-body">{{ report.summary | safe }}</div>
     </div>
 </div>
 {% endif %}
