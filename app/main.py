@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
-app = FastAPI(title="良华量化", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="良华分析", version="0.2.0", lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
 

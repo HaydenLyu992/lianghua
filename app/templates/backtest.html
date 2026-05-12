@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}在线回测 — 良华量化{% endblock %}
+{% block title %}在线回测 — 良华分析{% endblock %}
 
 {% block content %}
 <h1>在线回测</h1>
@@ -36,7 +36,7 @@
         <canvas id="equityChart" width="700" height="350"></canvas>
     </div>
     <div id="trade-section" style="display:none;">
-        <h3>交易概况</h3>
+        <h3>回测概况</h3>
         <div id="trade-summary"></div>
     </div>
     <div class="result-error" id="result-error" style="display:none;"></div>
@@ -126,7 +126,7 @@ async function runBacktest(e) {
         {label:'夏普比率', value: data.sharpe_ratio},
         {label:'最大回撤', value: data.max_drawdown + '%'},
         {label:'胜率', value: data.win_rate + '%'},
-        {label:'交易次数', value: data.total_trades},
+        {label:'成交次数', value: data.total_trades},
     ].map(m =>
         `<div class="metric-card"><span class="metric-value ${m.cls||''}">${m.value}</span><span class="metric-label">${m.label}</span></div>`
     ).join('');
