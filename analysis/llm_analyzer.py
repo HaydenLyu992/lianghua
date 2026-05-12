@@ -59,48 +59,113 @@ class LLMAnalyzer:
     async def comprehensive_analysis(self, code: str, name: str, total_score: int,
                                       signal: str, factors: list[dict],
                                       limit_info: dict, news: list[dict]) -> str:
-        """综合所有因子结果，生成一段直截了当的买卖建议"""
-        factor_text = "\n".join(
-            f"- {f['name']}(权重{f['weight']}%): {f['score']}分 {f['signal']}"
-            for f in factors
-        )
+        """综合所有因子结果，生成深度研判分析"""
+        factor_lines = []
+        for f in factors:
+            detail_str = ""
+            if f.get("detail"):
+                items = [
+                    f"{k}: {v}" for k, v in f["detail"].items()
+                    if not k.startswith("_") and k != "数据状态"
+                ]
+                if items:
+                    detail_str = f"（{', '.join(items[:5])}）"
+            factor_lines.append(
+                f"- {f['name']}(权重{f['weight']}%): {f['score']}分 {f['signal']} {detail_str}"
+            )
+        factor_text = "\n".join(factor_lines)
+
         news_text = "\n".join(
-            f"- [{n.get('sentiment','neutral')}] {n.get('title','')}"
-            for n in (news or [])[:10]
+            f"- [{n.get('sentiment','neutral')}] {n.get('title','')} — {n.get('summary','')}"
+            for n in (news or [])[:15]
         ) or "无相关新闻"
 
         limit_text = ""
         if limit_info:
             if limit_info.get("is_zt"):
-                limit_text = f"该股今日涨停，连板{limit_info.get('streak',0)}天，封单{limit_info.get('seal',0)}亿。"
+                limit_text = (
+                    f"该股今日涨停，连板{limit_info.get('streak',0)}天，"
+                    f"封单{limit_info.get('seal',0)}亿。"
+                    f"涨停概率估值{limit_info.get('zt_prob',0)}%，"
+                    f"跌停概率估值{limit_info.get('dt_prob',0)}%。"
+                )
             elif limit_info.get("is_dt"):
-                limit_text = "该股今日跌停，风险较高。"
+                limit_text = (
+                    f"该股今日跌停。"
+                    f"涨停概率估值{limit_info.get('zt_prob',0)}%，"
+                    f"跌停概率估值{limit_info.get('dt_prob',0)}%。"
+                )
+            else:
+                limit_text = (
+                    f"该股今日未涨跌停。"
+                    f"涨停概率估值{limit_info.get('zt_prob',0)}%，"
+                    f"跌停概率估值{limit_info.get('dt_prob',0)}%。"
+                )
 
-        prompt = f"""你是一位资深A股分析师。请根据以下多因子分析结果，给出一段150字以内的综合研判：
+        prompt = f"""你是一位资深A股量化分析师，拥有20年实战经验。请基于以下多维数据，对该股进行一次深入、全面的研判分析。要求分析详细、有数据支撑，避免空洞的结论。
 
-股票: {code} {name}
-综合得分: {total_score}/100 ({signal})
+**股票信息**
+代码: {code}
+名称: {name}
+综合得分: {total_score}/100
+综合信号: {signal}
 
-各因子详情:
+**各因子详细评分**
 {factor_text}
 
-涨跌停情况: {limit_text or '无异常'}
+**涨跌停分析**
+{limit_text or '无异常'}
 
-近期新闻:
+**近期新闻（已标注情感）**
 {news_text}
 
-请直接给出：1)涨跌趋势判断 2)今日是否适合买入 3)建议买入价格区间 4)建议卖出/止损价格。
-要求语言简明扼要，不模棱两可。以纯文本返回，不要markdown格式。"""
+请从以下几个维度展开深度分析（总篇幅800-1200字）：
+
+1. **趋势研判**（200-300字）
+   - 结合各因子得分，判断该股当前处于什么阶段（上升趋势/下降趋势/震荡整理）
+   - 哪些因子在支撑趋势，哪些因子在发出反向信号
+   - 未来1-2周最可能的走势推演
+
+2. **多空博弈分析**（200-300字）
+   - 多方的核心逻辑和支撑依据是什么
+   - 空方的核心逻辑和风险点在哪里
+   - 当前市场环境下多空力量对比的评估
+   - 结合资金面（北向、主力、融资融券）分析资金博弈格局
+
+3. **买入建议**（150-200字）
+   - 今日是否适合买入（明确回答：适合/观望/不适合）
+   - 如果适合，建议的买入价格区间及依据（参考均线支撑位、近期低点等）
+   - 如果不适合，需要等待什么条件出现才可以考虑买入
+
+4. **风险控制**（150-200字）
+   - 建议的止损价位及计算逻辑
+   - 建议的止盈目标价位
+   - 当前仓位建议（轻仓/中等/重仓）
+   - 需要重点监控的風險因素
+
+5. **关键观察点**（100-150字）
+   - 未来1-3个交易日内最值得关注的信号或事件
+   - 哪些数据变化可能导致研判结论需要修正
+
+要求：语言专业但不晦涩，有数据支撑每一个判断，不模棱两可，给出明确的操作建议。以纯文本返回，适当分段。"""
 
         try:
             response = await self.client.chat.completions.create(
                 model=LLM_MODEL,
                 messages=[
-                    {"role": "system", "content": "你是一位A股量化分析师。给出直截了当、简洁明确的买卖建议。不模棱两可。"},
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是一位资深A股量化分析师，擅长多因子模型分析和资金面研判。"
+                            "你的分析风格：数据驱动、逻辑严密、敢于给出明确判断，同时充分揭示风险。"
+                            "你从不模棱两可，每个结论都有具体的数据支撑。"
+                            "你对技术面、基本面、资金面、宏观面都有深刻理解，能够综合多维度信息。"
+                        ),
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.3,
-                max_tokens=400,
+                max_tokens=2000,
             )
             return (response.choices[0].message.content or "").strip()
         except Exception as e:

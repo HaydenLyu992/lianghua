@@ -1,7 +1,13 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent
+
+# 加载 .env 文件（如果存在）
+_dotenv_path = BASE_DIR / ".env"
+if _dotenv_path.exists():
+    load_dotenv(_dotenv_path)
 DATA_DIR = BASE_DIR / "data"
 LOG_DIR = BASE_DIR / "logs"
 
