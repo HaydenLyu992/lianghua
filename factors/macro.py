@@ -1,12 +1,10 @@
 import logging
 import time
-import numpy as np
 from factors.base import FactorBase, FactorResult
 from core.akshare_client import AkShareClient
 
 logger = logging.getLogger(__name__)
 
-# 宏观数据 TTL 缓存 — 非个股相关，1小时内复用
 _macro_cache: dict = {"time": 0, "pmi": None, "cpi": None, "m2": None, "lpr": None}
 _MACRO_CACHE_TTL = 3600
 
@@ -18,37 +16,44 @@ class MacroFactor(FactorBase):
         self.client = client
 
     async def analyze(self, code: str, name: str = "") -> FactorResult:
-        checks: dict[str, int] = {}
+        data: dict[str, str] = {}
         try:
             pmi = self._cached("pmi", self.client.get_pmi)
             if pmi is not None and not pmi.empty:
-                checks["PMI"] = self._score_pmi(pmi)
+                latest = float(pmi.iloc[0].get("制造业", 50))
+                data["PMI(制造业)"] = str(latest)
 
             cpi = self._cached("cpi", self.client.get_cpi)
             if cpi is not None and not cpi.empty:
-                checks["CPI"] = self._score_cpi(cpi)
+                vals = cpi.select_dtypes(include=[float]).iloc[0]
+                if len(vals) > 0:
+                    data["CPI(最新)"] = str(vals.iloc[0])
 
             m2 = self._cached("m2", self.client.get_money_supply)
             if m2 is not None and not m2.empty:
-                checks["货币供应"] = self._score_m2(m2)
+                latest_m2 = float(m2.iloc[0].get("同比", "N/A"))
+                if str(latest_m2) != "nan":
+                    data["M2同比增速"] = f"{latest_m2}%"
 
             lpr = self._cached("lpr", self.client.get_lpr)
             if lpr is not None and not lpr.empty:
-                checks["LPR"] = self._score_lpr(lpr)
+                lpr_1y = float(lpr.iloc[0].get("1年期", "N/A"))
+                lpr_5y = float(lpr.iloc[0].get("5年期", "N/A"))
+                if str(lpr_1y) != "nan":
+                    data["LPR(1年期)"] = f"{lpr_1y}%"
+                if str(lpr_5y) != "nan":
+                    data["LPR(5年期)"] = f"{lpr_5y}%"
 
         except Exception as e:
             logger.warning("Macro factor error for %s: %s", code, e)
 
-        if not checks:
-            return FactorResult(factor_name=self.name, score=50, signal="neutral")
+        if not data:
+            return FactorResult(
+                factor_name=self.name, has_data=False,
+                detail={"数据状态": "所有宏观数据源均不可用"},
+            )
 
-        raw = np.mean(list(checks.values()))
-        score = int(np.clip(raw, 0, 100))
-        signal = "bullish" if score >= 65 else ("bearish" if score < 35 else "neutral")
-        return FactorResult(
-            factor_name=self.name, score=score, signal=signal,
-            detail=checks,
-        )
+        return FactorResult(factor_name=self.name, detail=data)
 
     def _cached(self, key: str, fetcher):
         global _macro_cache
@@ -59,20 +64,3 @@ class MacroFactor(FactorBase):
         _macro_cache[key] = data
         _macro_cache["time"] = now
         return data
-
-    def _score_pmi(self, df) -> int:
-        latest = float(df.iloc[0].get("制造业", 50))
-        return int(np.clip(latest * 2 - 50, 0, 100))
-
-    def _score_cpi(self, df) -> int:
-        vals = df.select_dtypes(include=[float]).iloc[0]
-        latest = float(vals.iloc[0] if len(vals) > 0 else 2)
-        return 70 if 1 <= latest <= 3 else (50 if 0 < latest < 5 else 30)
-
-    def _score_m2(self, df) -> int:
-        latest = float(df.iloc[0].get("同比", 8))
-        return int(np.clip(latest * 10, 0, 100))
-
-    def _score_lpr(self, df) -> int:
-        latest = float(df.iloc[0].get("1年期", 3.5))
-        return int(np.clip(100 - latest * 20, 0, 100))

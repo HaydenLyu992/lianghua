@@ -46,19 +46,23 @@ class LimitAnalyzer:
             seal = float(row.get("封单金额", 0) or 0) / 1e8
             streak = int(row.get("连板数", 1) or 1)
 
-        # 拉实时行情
+        # 拉实时行情 — 优先腾讯快照（极快），回退 Sina spot
         pct_chg = 0.0
         try:
-            spot = self.client.get_spot_df()
-            if not spot.empty:
-                spot_row = spot[spot["代码"].astype(str).str.contains(raw)]
-                if not spot_row.empty:
-                    pct_col = next(
-                        (c for c in spot_row.columns if "涨跌幅" in c or "pct" in c.lower()),
-                        None,
-                    )
-                    if pct_col:
-                        pct_chg = float(spot_row.iloc[0][pct_col])
+            txq = self.client.get_tencent_quote(raw)
+            if txq:
+                pct_chg = txq.get("change_pct", 0)
+            else:
+                spot = self.client.get_spot_df()
+                if not spot.empty:
+                    spot_row = spot[spot["代码"].astype(str).str.contains(raw)]
+                    if not spot_row.empty:
+                        pct_col = next(
+                            (c for c in spot_row.columns if "涨跌幅" in c or "pct" in c.lower()),
+                            None,
+                        )
+                        if pct_col:
+                            pct_chg = float(spot_row.iloc[0][pct_col])
         except Exception:
             pass
 

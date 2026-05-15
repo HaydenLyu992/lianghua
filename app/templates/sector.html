@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}热门板块分析 — 良华分析{% endblock %}
+
+{% block head %}
+<style>
+.sector-hero {
+    text-align: center;
+    padding: 2rem 0 1rem;
+}
+.sector-hero h1 {
+    font-size: 1.8rem;
+    margin-bottom: 0.5rem;
+}
+.sector-hero .subtitle {
+    color: var(--text-muted);
+    max-width: 650px;
+    margin: 0 auto;
+    line-height: 1.6;
+}
+.sector-trigger {
+    text-align: center;
+    margin: 2rem 0;
+}
+.analyze-btn {
+    padding: 14px 48px;
+    font-size: 1.1rem;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+.analyze-btn:hover { opacity: 0.9; }
+.analyze-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.sector-result {
+    max-width: 900px;
+    margin: 0 auto;
+}
+.markdown-body {
+    line-height: 1.8;
+    font-size: 0.95rem;
+}
+.markdown-body h2 {
+    font-size: 1.4rem;
+    margin: 2rem 0 1rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 2px solid var(--accent);
+}
+.markdown-body h3 {
+    font-size: 1.15rem;
+    margin: 1.5rem 0 0.75rem;
+}
+.markdown-body h4 {
+    font-size: 1.05rem;
+    margin: 1rem 0 0.5rem;
+}
+.markdown-body ul, .markdown-body ol {
+    padding-left: 1.5rem;
+}
+.markdown-body li { margin-bottom: 0.35rem; }
+.markdown-body blockquote {
+    border-left: 3px solid var(--accent);
+    padding: 0.5rem 1rem;
+    margin: 0.75rem 0;
+    background: var(--bg-card);
+    border-radius: 0 6px 6px 0;
+}
+.markdown-body strong { color: var(--accent); }
+.markdown-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+}
+.markdown-body th, .markdown-body td {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    text-align: left;
+}
+.markdown-body th { background: var(--bg-card); font-weight: 600; }
+.markdown-body hr { margin: 2rem 0; border: none; border-top: 1px solid var(--border); }
+
+.data-note {
+    margin: 1rem 0;
+    padding: 0.75rem 1rem;
+    background: var(--bg-card);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.data-note .note-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+.error-banner {
+    padding: 1rem;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    color: #991b1b;
+    margin: 1rem 0;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sector-hero">
+    <h1>行业 & 概念板块深度分析</h1>
+    <p class="subtitle">
+        基于行业涨幅、概念热度、板块资金流向、涨停板分布、北向资金偏好、宏观政策新闻等多维实时数据，
+        AI 驱动板块轮动研判，分别识别当前最热行业板块和概念板块，并推荐值得关注的主板标的。
+    </p>
+</div>
+
+<div class="sector-trigger" id="trigger-area">
+    <button class="analyze-btn"
+            hx-get="/api/sector/analyze"
+            hx-target="#result-area"
+            hx-swap="innerHTML"
+            hx-indicator="#loading-area"
+            onclick="document.getElementById('trigger-area').style.display='none'; document.getElementById('loading-area').style.display='block';"
+    >开始分析</button>
+</div>
+
+<div id="loading-area" style="display:none; text-align:center; padding: 3rem 0;">
+    <div class="loading-spinner-ring" style="margin:0 auto 1rem;"></div>
+    <p style="color: var(--text-muted);">正在收集最新市场数据并通过AI分析板块轮动趋势，预计需要30-60秒...</p>
+</div>
+
+<div id="result-area" class="sector-result"></div>
+
+<div style="text-align:center; margin: 2rem 0;">
+    <button id="reanalyze-btn" style="display:none; padding:10px 32px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); cursor:pointer;"
+            onclick="location.reload();">重新分析</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// After HTMX swap, show the re-analyze button
+document.body.addEventListener('htmx:afterSwap', function(e) {
+    if (e.detail.target.id === 'result-area') {
+        document.getElementById('loading-area').style.display = 'none';
+        var btn = document.getElementById('reanalyze-btn');
+        if (btn) btn.style.display = 'inline-block';
+    }
+});
+// Handle HTMX errors
+document.body.addEventListener('htmx:responseError', function(e) {
+    if (e.detail.target.id === 'result-area') {
+        document.getElementById('loading-area').style.display = 'none';
+        document.getElementById('trigger-area').style.display = 'block';
+        var btn = document.getElementById('reanalyze-btn');
+        if (btn) btn.style.display = 'inline-block';
+    }
+});
+</script>
+{% endblock %}

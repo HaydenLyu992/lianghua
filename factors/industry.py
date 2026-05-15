@@ -1,12 +1,10 @@
 import logging
 import time
-import numpy as np
 from factors.base import FactorBase, FactorResult
 from core.akshare_client import AkShareClient
 
 logger = logging.getLogger(__name__)
 
-# 行业指数 TTL 缓存 — 非个股相关，5分钟内复用
 _ind_cache: dict = {"time": 0, "data": None}
 _IND_CACHE_TTL = 300
 
@@ -21,24 +19,31 @@ class IndustryFactor(FactorBase):
         try:
             df = self._get_cached_index()
             if df.empty:
-                return FactorResult(factor_name=self.name, score=50, signal="neutral")
+                return FactorResult(
+                    factor_name=self.name, has_data=False,
+                    detail={"数据状态": "行业指数数据不可用"},
+                )
 
             latest = df.iloc[0]
             change = float(latest.get("涨跌幅", 0) or 0)
-            score = int(np.clip(50 + change * 5, 0, 100))
+            data = {
+                "当日行业涨跌幅": f"{change:.2f}%",
+                "领涨行业(TOP3)": "、".join(self._top_sectors(df, 3)),
+                "领跌行业(TOP3)": "、".join(self._top_sectors(df, -3)),
+            }
 
-            signal = "bullish" if score >= 65 else ("bearish" if score < 35 else "neutral")
-            return FactorResult(
-                factor_name=self.name, score=score, signal=signal,
-                detail={
-                    "行业涨跌幅": f"{change:.2f}%",
-                    "领涨行业": self._top_sectors(df, 3),
-                    "领跌行业": self._top_sectors(df, -3),
-                },
-            )
+            # 全行业排名概况
+            name_col = next((c for c in df.columns if c in ("板块", "板块名称")), "板块")
+            if name_col in df.columns:
+                data["行业总数"] = str(len(df))
+
+            return FactorResult(factor_name=self.name, detail=data)
         except Exception as e:
             logger.warning("Industry factor error for %s: %s", code, e)
-            return FactorResult(factor_name=self.name, score=50, signal="neutral")
+            return FactorResult(
+                factor_name=self.name, has_data=False,
+                detail={"错误": str(e)},
+            )
 
     def _get_cached_index(self):
         global _ind_cache

@@ -32,7 +32,7 @@ class LLMAnalyzer:
             base_url=LLM_BASE_URL,
         )
 
-    async def analyze_news(self, code: str) -> list[dict]:
+    async def analyze_news(self, code: str, tracker=None) -> list[dict]:
         """拉取个股新闻并用 LLM 做情感分析"""
         raw_news = self.news_fetcher.fetch_stock_news(code, limit=20)
         if not raw_news:
@@ -51,6 +51,9 @@ class LLMAnalyzer:
             temperature=0.1,
             max_tokens=1024,
         )
+        if tracker and hasattr(response, "usage") and response.usage:
+            tracker.add_tokens(response.usage.prompt_tokens, response.usage.completion_tokens)
+
         content = response.choices[0].message.content or "[]"
         content = content.strip()
         if content.startswith("```"):
@@ -60,9 +63,8 @@ class LLMAnalyzer:
         return self._safe_json_parse(content)
 
     async def analyze_factors(self, code: str, name: str,
-                               factors: list[dict]) -> dict[str, str]:
-        """用LLM为每个因子生成深度分析描述——不写死规则，基于全部收集到的原始数据"""
-        # 构建每个因子的完整原始数据
+                               factors: list[dict], tracker=None) -> dict[str, str]:
+        """用LLM为每个因子生成深度分析描述。返回 {key: 描述}。"""
         data_blocks = []
         for f in factors:
             detail = f.get("detail") or {}
@@ -80,9 +82,7 @@ class LLMAnalyzer:
                 for ev in events[:8]
             ) if events else "    (无关键事件)"
 
-            data_blocks.append(f"""### {f['name']}（权重{f['weight']}%）
-- 最终得分: {f['score']}/100
-- 综合信号: {f['signal']}
+            data_blocks.append(f"""### {f['name']}
 - 原始子指标数据:
 {detail_lines}
 - 关键事件:
@@ -90,16 +90,16 @@ class LLMAnalyzer:
 
         all_raw_data = "\n\n".join(data_blocks)
 
-        factor_analysis_prompt = f"""你是一位严谨的A股数据分析师。以下是 "{code} {name}" 的6个因子全部原始评分数据。
+        factor_analysis_prompt = f"""你是一位严谨的A股数据分析师。以下是 "{code} {name}" 的多个因子全部原始数据。
 
-请你基于这些**真实数据**，为每个因子写一段150-200字的深度分析。
+请你基于这些**真实数据**，为每个因子写一段150-250字的深度分析。
 
 ## ⚠️ 铁律
 1. **只能基于提供的数据进行分析**，数据里没有的东西绝对不要编造
-2. **剔除噪音**：如果某个因子只有一个子指标且值为50，说明数据源可能缺失，直接说明"该因子数据不足，评分缺乏参考意义"
-3. **数据充足时深入分析**：解读各个子指标的含义、相互关系、对得分的贡献
-4. **指出亮点和风险**：数据中的极端值（≥75或≤25）要重点标注
-5. **用具体数值说话**：如"净利润增速得分82，反映近两期利润增长约16%"
+2. **数据不足时诚实标注**：如果因子子指标极少，说明数据源缺失，分析写"该因子数据不足，缺乏参考意义"
+3. **数据充足时深入分析**：解读各子指标含义、相互关系、异常值
+4. **用具体数值说话**：引用数据中的具体数字
+5. **不要打分**：纯文字分析，不要出现分数或评级
 
 ## 📊 原始数据
 
@@ -107,7 +107,7 @@ class LLMAnalyzer:
 
 ## 📝 输出格式
 
-对每个因子，严格使用以下格式输出：
+对每个因子，严格使用以下格式：
 
 ### 基本面
 （分析内容）
@@ -115,17 +115,7 @@ class LLMAnalyzer:
 ### 行业
 （分析内容）
 
-### 宏观
-（分析内容）
-
-### 资金流向
-（分析内容）
-
-### 情绪技术
-（分析内容）
-
-### 地缘
-（分析内容）
+...
 
 只输出以上内容，不要额外说明。"""
 
@@ -139,6 +129,7 @@ class LLMAnalyzer:
                             "你是一位严谨的数据分析师。你只基于提供的数据进行分析，"
                             "绝不编造任何信息。数据不足时你会诚实说明，数据充足时"
                             "你会深入解读每个指标的含义和关联。"
+                            "你只做纯文字分析，不打分、不评级。"
                         ),
                     },
                     {"role": "user", "content": factor_analysis_prompt},
@@ -146,6 +137,8 @@ class LLMAnalyzer:
                 temperature=0.3,
                 max_tokens=2048,
             )
+            if tracker and hasattr(response, "usage") and response.usage:
+                tracker.add_tokens(response.usage.prompt_tokens, response.usage.completion_tokens)
             raw = (response.choices[0].message.content or "").strip()
             return self._parse_factor_analyses(raw, factors)
         except Exception as e:
@@ -153,73 +146,64 @@ class LLMAnalyzer:
             return self._fallback_factor_desc(factors)
 
     def _parse_factor_analyses(self, raw: str, factors: list[dict]) -> dict[str, str]:
-        """解析LLM返回的 ### 名称 ... 格式"""
-        result = {}
-        # 按 "### " 分割
+        """解析LLM返回的 ### 名称 ... 格式，返回 {key: 描述}"""
+        descriptions: dict[str, str] = {}
+        label_to_key = {
+            "基本面": "fundamental", "行业": "industry", "宏观": "macro",
+            "资金流向": "fund_flow", "情绪技术": "sentiment", "地缘": "geo_external",
+        }
         blocks = re.split(r'\n###\s+', raw)
         for block in blocks:
             block = block.strip()
             if not block:
                 continue
-            # 第一行是名称，后面是内容
             lines = block.split("\n", 1)
             title = lines[0].strip().lstrip("#").strip()
             content = lines[1].strip() if len(lines) > 1 else ""
 
-            # 匹配因子key
-            label_to_key = {
-                "基本面": "fundamental", "行业": "industry", "宏观": "macro",
-                "资金流向": "fund_flow", "情绪技术": "sentiment", "地缘": "geo_external",
-            }
             for label, key in label_to_key.items():
                 if label in title:
-                    result[key] = content
+                    descriptions[key] = content
                     break
             else:
-                # fallback: try matching by key directly
                 for f in factors:
                     if f.get("name", "") in title or f.get("key", "") in title:
-                        result[f["key"]] = content
+                        descriptions[f["key"]] = content
                         break
 
-        return result
+        return descriptions
 
     def _fallback_factor_desc(self, factors: list[dict]) -> dict[str, str]:
-        """LLM不可用时的简单规则兜底"""
+        """LLM不可用时的简单规则兜底——纯列出原始数据"""
         result = {}
         for f in factors:
             key = f["key"]
-            score = f["score"]
-            signal = f["signal"]
-            signal_cn = {"bullish": "看多", "bearish": "看空", "neutral": "中性"}
             detail = f.get("detail") or {}
             diag = detail.get("数据状态", "")
 
-            level = (
-                "优秀" if score >= 80 else "良好" if score >= 65
-                else "一般" if score >= 45 else "偏弱" if score >= 30 else "较差"
-            )
-
-            parts = [
-                f"得分{score}分（{level}），发出{signal_cn.get(signal, '中性')}信号。",
-                f"该因子占综合评分的{f['weight']}%权重。",
-            ]
+            parts = []
             if diag:
                 parts.append(f"数据获取状态：{diag}。")
 
-            # 列出子指标
             for k, v in detail.items():
                 if not k.startswith("_") and k != "数据状态":
                     parts.append(f"{k}: {v}。")
 
-            result[key] = " ".join(parts)
+            if parts:
+                result[key] = " ".join(parts)
+            else:
+                result[key] = "该因子暂无有效数据。"
         return result
 
-    async def comprehensive_analysis(self, code: str, name: str, total_score: int,
-                                      signal: str, factors: list[dict],
-                                      limit_info: dict, news: list[dict]) -> str:
-        """多角色辩论式深度分析：8人激烈辩论，基于真实数据，剔除噪音"""
-        # 构建完整原始数据（不仅是摘要，而是所有细节）
+    async def comprehensive_analysis(self, code: str, name: str,
+                                      factors: list[dict],
+                                      limit_info: dict, news: list[dict],
+                                      factor_descs: dict[str, str] = None,
+                                      tracker=None) -> str:
+        """多角色辩论式深度分析：8人激烈辩论，基于真实数据"""
+        factor_descs = factor_descs or {}
+
+        # 构建完整原始数据
         factor_data_blocks = []
         for f in factors:
             detail = f.get("detail") or {}
@@ -237,16 +221,31 @@ class LLMAnalyzer:
                 event_items.append(f"    [{ev.get('sentiment','neutral')}] {ev.get('title','')}")
             event_str = "\n".join(event_items) if event_items else "    无"
 
+            # 纳入LLM因子分析结论
+            llm_desc = factor_descs.get(f["key"], "")
+            llm_block = f"- LLM深度解读: {llm_desc}\n" if llm_desc else ""
+
             factor_data_blocks.append(
-                f"#### {f['name']}（权重{f['weight']}%）\n"
-                f"- 得分: **{f['score']}/100** — {f['signal']}\n"
-                f"- 子指标原始数据:\n{detail_str}\n"
+                f"#### {f['name']}\n"
+                f"{llm_block}"
+                f"- 原始子指标数据:\n{detail_str}\n"
                 f"- 关键事件:\n{event_str}"
             )
         factor_raw_text = "\n\n".join(factor_data_blocks)
 
+        # 新闻分析结论
+        news_summary_text = ""
+        if news:
+            positive_news = [n for n in news if n.get("sentiment") == "positive"]
+            negative_news = [n for n in news if n.get("sentiment") == "negative"]
+            high_impact = [n for n in news if n.get("impact", 0) >= 4]
+            news_summary_text = (
+                f"共{len(news)}条新闻：利好{len(positive_news)}条，"
+                f"利空{len(negative_news)}条，高影响力{len(high_impact)}条。\n"
+            )
+
         news_text = "\n".join(
-            f"- [{n.get('sentiment','neutral')}] {n.get('title','')} — {n.get('summary','')}"
+            f"- [{n.get('sentiment','neutral')}] [影响{n.get('impact','-')}/5] {n.get('title','')} — {n.get('summary','')}"
             for n in (news or [])[:15]
         ) or "无相关新闻"
 
@@ -268,6 +267,9 @@ class LLMAnalyzer:
                     f"今日未涨跌停。涨停概率估值{zt_p}%，跌停概率估值{dt_p}%。"
                 )
 
+        # ── 提取核心估值/财务/交易数据 ──
+        valuation_block = self._build_valuation_block(factors)
+
         debate_prompt = f"""# 🏛️ A股投资决策深度辩论会
 
 你正在主持一场高水平的A股投资决策辩论。以下8个角色都由你扮演。
@@ -278,31 +280,34 @@ class LLMAnalyzer:
 
 1. **只能引用"可用数据"中明确列出的数值和事件**，不允许编造任何数据
 2. **如果某项数据缺失，相关论点必须标注"⚠️ 数据不足"**，并说明缺失的数据对判断的影响
-3. **噪音识别**：50分上下的子指标通常是数据缺失或中性信号，不应作为核心论据
-4. **极端值优先**：≥75或≤25的指标才是真正的信号，应重点辩论和深度挖掘
-5. **每个论点必须可追溯到具体数字**：说"资金面好"必须具体到"主力资金得分X，近5日净流入Y亿"
-6. **区分相关性与因果性**：不能因为两个指标同向就断言因果关系
+3. **每个论点必须可追溯到具体数字**：说"估值偏高"必须具体到"PE(TTM)=XX倍，行业平均YY倍"
+4. **区分相关性与因果性**：不能因为两个指标同向就断言因果关系
+5. **所有核心财务数据必须在辩论中被至少引用一次**：PE/PB/ROE/负债率/现金流/成交量/换手率
 
 ---
 
 ## 📊 辩论议题
 
 > **股票**: {code} {name}
-> **综合得分**: {total_score}/100
-> **综合信号**: {signal}
 > **核心问题**: 该股当前是否值得买入？什么价位买入？止盈止损设在哪里？
 
 ---
 
 ## 📈 可用数据（辩论的唯一依据）
 
-### 各因子完整原始数据
+### 核心估值 & 交易数据
+{valuation_block}
+
+### 各因子完整原始数据（含LLM深度解读）
 {factor_raw_text}
 
 ### 涨跌停分析
 {limit_text or '无异常'}
 
-### 近期新闻
+### 新闻舆情总览
+{news_summary_text}
+
+### 近期新闻详情
 {news_text}
 
 ---
@@ -379,7 +384,7 @@ class LLMAnalyzer:
 
 **周对冲**逐一批驳多方基本面论点：指出财务数据中的矛盾、估值陷阱、盈利质量疑点。用至少一个历史反面案例说明类似情况下股价的表现。
 
-**吴风控**从风险角度反击：量化最大回撤风险、流动性风险、事件风险。计算如果各项指标恶化到25分位，股价可能的跌幅。指出多方避而不谈的尾部风险。
+**吴风控**从风险角度反击：量化最大回撤风险、流动性风险、事件风险。指出多方避而不谈的尾部风险。
 
 **郑逆向**从市场共识的反面出击：寻找被忽视的利空（如行业政策风险、竞争格局恶化、大股东行为异常等）。挑战多方的核心假设。
 
@@ -419,7 +424,7 @@ class LLMAnalyzer:
 - **止损价格**: ¥X.XX（止损幅度X%，依据：ATR指标/前低支撑/均线支撑）
 - **第一止盈目标**: ¥X.XX（涨幅X%，依据：前高阻力/布林上轨/估值上限）
 - **第二止盈目标**: ¥X.XX（涨幅X%，依据：突破前高后的技术目标位）
-- **仓位建议**: X成仓位（依据：综合得分对应的凯利公式/风险预算）
+- **仓位建议**: X成仓位（依据：风险预算/波动率评估）
 - **建议持仓周期**: X天 — X周（依据：技术信号的时间框架）
 
 ### ⚠️ 关键风险清单
@@ -456,12 +461,10 @@ class LLMAnalyzer:
                         "content": (
                             "你是一位顶级的A股多空辩论主持人。你严格遵循证据铁律："
                             "每个论点必须有提供的真实数据支撑，绝不编造。"
-                            "你能识别噪音（50分上下的中性信号）并引导辩论聚焦于"
-                            "真正的信号（极端值、明确的事件）。\n\n"
+                            "你基于数据的异常值、趋势和关联来引导辩论，"
+                            "不做简单的好坏二分。\n\n"
                             "核心原则：\n"
                             "- 数据缺失就说数据缺失，不要脑补\n"
-                            "- 得分50分 = 中性/数据不足，不值得激烈辩论\n"
-                            "- 极端值（≥75或≤25）才是真正值得辩论的信号\n"
                             "- 每个论点必须可追溯到具体数字\n"
                             "- 财务分析要深入拆解盈利能力、估值、成长性、健康度\n"
                             "- 技术分析要多指标共振验证，不只看单一指标\n"
@@ -475,29 +478,54 @@ class LLMAnalyzer:
                 temperature=0.7,
                 max_tokens=8192,
             )
+            if tracker and hasattr(response, "usage") and response.usage:
+                tracker.add_tokens(response.usage.prompt_tokens, response.usage.completion_tokens)
             raw = (response.choices[0].message.content or "").strip()
             return md.convert(raw)
         except Exception as e:
             logger.warning("Comprehensive analysis failed: %s", e)
-            return self._fallback_summary(total_score, signal, factors, limit_info)
+            return self._fallback_summary(factors, limit_info)
 
-    def _fallback_summary(self, total_score: int, signal: str, factors: list[dict],
+    def _build_valuation_block(self, factors: list[dict]) -> str:
+        """从各因子数据中提取PE/PB/ROE/负债率/现金流/成交量/换手率等核心数据"""
+        lines = []
+
+        for f in factors:
+            key = f.get("key", "")
+            detail = f.get("detail") or {}
+
+            if key == "fundamental":
+                for sub_key in ["PE(TTM)", "PB", "市盈率", "ROE", "净利润增速",
+                                "营收增速", "市值规模", "换手率", "资产负债率",
+                                "经营现金流", "每股净资产", "每股收益"]:
+                    if sub_key in detail:
+                        lines.append(f"- **{sub_key}**: {detail[sub_key]}")
+
+            elif key == "fund_flow":
+                for sub_key in detail:
+                    if not sub_key.startswith("_") and sub_key != "数据状态":
+                        lines.append(f"- **{sub_key}**: {detail[sub_key]}")
+
+            elif key == "sentiment":
+                # 列出关键技术指标
+                tech_keys = ["当前价格", "MA5", "MA10", "MA20", "MA60", "均线排列",
+                            "MACD状态", "MACD零轴", "MACD动能",
+                            "RSI(14)", "RSI区域",
+                            "布林上轨", "布林中轨", "布林下轨", "布林位置",
+                            "ATR", "成交量(相对20日均量)", "量价关系",
+                            "20日最高价", "20日最低价", "60日位置"]
+                for sub_key in tech_keys:
+                    if sub_key in detail:
+                        lines.append(f"- **{sub_key}**: {detail[sub_key]}")
+
+        if not lines:
+            return "（核心估值数据暂缺）"
+        return "\n".join(lines)
+
+    def _fallback_summary(self, factors: list[dict],
                           limit_info: dict) -> str:
         """LLM不可用时的规则兜底——返回Markdown转HTML"""
-        bullish = sum(1 for f in factors if f["signal"] == "bullish")
-        bearish = sum(1 for f in factors if f["signal"] == "bearish")
-        neutral = len(factors) - bullish - bearish
-
-        if total_score >= 80:
-            action = "强势看多，可考虑逢低买入。建议买入区间为近期均价的-3%~-5%，止损设在买入价下方5%。"
-        elif total_score >= 60:
-            action = "中性偏多，可轻仓试探。建议回调至均线附近买入，止损设为买入价下方3%。"
-        elif total_score >= 40:
-            action = "方向不明，建议观望等待更明确信号。若已持仓可继续持有，不建议新开仓。"
-        elif total_score >= 20:
-            action = "中性偏空，不宜买入。若已持仓建议逢高减仓，止损不宜过远。"
-        else:
-            action = "强烈看空，不建议买入。持仓者应考虑止损离场。"
+        factor_count = len([f for f in factors if f.get("detail")])
 
         limit_note = ""
         if limit_info.get("is_zt"):
@@ -505,21 +533,17 @@ class LLMAnalyzer:
         elif limit_info.get("is_dt"):
             limit_note = "> ⚠️ 该股今日跌停，短期仍有下行风险。\n\n"
 
-        md_text = f"""## 📊 规则引擎综合研判（LLM暂不可用）
+        md_text = f"""## 📊 综合研判（LLM暂不可用）
 
-> **综合得分**: {total_score}/100 — **{signal}**
+### 数据概况
 
-### 多空力量统计
-
-| 方向 | 因子数 |
-|------|--------|
-| 🔴 看多 | {bullish} |
-| 🔵 看空 | {bearish} |
-| ⚪ 中性 | {neutral} |
+| 维度 | 状态 |
+|------|------|
+| 有效因子数 | {factor_count} |
 
 ### 操作建议
 
-**{action}**
+**LLM服务暂时不可用，请稍后重试以获取完整的辩论式分析。**
 
 {limit_note}---
 *此为本地规则引擎生成的兜底分析，详细辩论分析将在LLM服务恢复后提供。*"""

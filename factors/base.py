@@ -5,10 +5,11 @@ from abc import ABC, abstractmethod
 @dataclass
 class FactorResult:
     factor_name: str
-    score: int                    # 0-100
-    signal: str                   # bullish / bearish / neutral
-    detail: dict = field(default_factory=dict)
+    score: int = 0                # 已废弃，LLM 全权分析
+    signal: str = "llm"           # 已废弃
+    detail: dict = field(default_factory=dict)   # 组织好的原始数据 {标签: 值}
     events: list[dict] = field(default_factory=list)  # 关键事件 [{title, sentiment, impact}]
+    has_data: bool = True         # False = 所有数据源均无数据，该因子应被排除
 
 
 class FactorBase(ABC):

@@ -1,0 +1,59 @@
+<div id="progress-panel-content" data-complete="{{ 'true' if is_complete else 'false' }}">
+    {% if error %}
+    <div class="error-banner">{{ error }}</div>
+    {% else %}
+    <div class="progress-bar-wrap">
+        <div class="progress-bar-outer">
+            <div class="progress-bar-inner" style="width:{{ pct }}%"></div>
+        </div>
+        <div class="progress-meta">
+            <span>{{ completed }}/{{ total }} 阶段完成</span>
+            <span>⏱ {{ elapsed }}s</span>
+        </div>
+    </div>
+
+    <div class="stage-grid">
+        {% for s in stages %}
+        <div class="stage-card {{ s.status }}">
+            <span class="stage-dot {{ s.status }}"></span>
+            <span class="stage-name">{{ s.icon }} {{ s.name }}</span>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="stats-row">
+        <div class="stat-card">
+            <div class="stat-value">{{ llm_calls }}</div>
+            <div class="stat-label">LLM 调用</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ "{:,}".format(tokens_in) }}</div>
+            <div class="stat-label">输入 Tokens</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ "{:,}".format(tokens_out) }}</div>
+            <div class="stat-label">输出 Tokens</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ "{:,}".format(tokens_in + tokens_out) }}</div>
+            <div class="stat-label">总计 Tokens</div>
+        </div>
+    </div>
+
+    {% if stage_reports %}
+    <div class="stage-results">
+        {% for s in stages %}
+        {% if s.status == 'done' and stage_reports.get(s.id) %}
+        <details class="stage-detail" {% if loop.first %}open{% endif %}>
+            <summary class="stage-detail-summary">
+                {{ s.icon }} {{ s.name }}
+                <span class="stage-detail-check">✓</span>
+            </summary>
+            <div class="stage-detail-body">{{ stage_reports[s.id] | safe }}</div>
+        </details>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endif %}
+</div>

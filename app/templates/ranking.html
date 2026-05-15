@@ -1,8 +1,83 @@
 {% extends "base.html" %}
-{% block title %}资金流向排行榜 — 良华分析{% endblock %}
+{% block title %}排行榜 — 良华分析{% endblock %}
+
+{% block head %}
+<style>
+.refresh-btn {
+    padding: 10px 28px;
+    font-size: 0.95rem;
+    border: none;
+    border-radius: 6px;
+    background: #dc2626;
+    color: #fff;
+    cursor: pointer;
+    font-weight: 600;
+    transition: opacity 0.2s;
+}
+.refresh-btn:hover { opacity: 0.85; }
+.refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.ranking-status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+#update-info {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+/* Trend tags */
+.trend-tag span {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+.tag-strong { background: #dc2626; color: #fff; }
+.tag-up { background: #f97316; color: #fff; }
+.tag-mild-up { background: #fbbf24; color: #7c2d12; }
+.tag-neutral { background: #e5e7eb; color: #6b7280; }
+.tag-mild-down { background: #93c5fd; color: #1e3a5f; }
+.tag-down { background: #3b82f6; color: #fff; }
+.tag-weak { background: #1d4ed8; color: #fff; }
+
+.money-out { color: #2563eb; font-weight: 600; }
+
+.ai-analyze-btn {
+    padding: 10px 28px;
+    font-size: 0.95rem;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--accent);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.ai-analyze-btn:hover { background: var(--accent); color: #fff; }
+
+.trend-analysis {
+    margin-top: 1.5rem;
+    padding: 1.5rem;
+    background: var(--bg-card);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    line-height: 1.8;
+}
+.trend-analysis h2 { font-size: 1.2rem; margin: 1.5rem 0 0.75rem; }
+.trend-analysis h3 { font-size: 1.05rem; margin: 1rem 0 0.5rem; }
+.trend-analysis ul { padding-left: 1.5rem; }
+.trend-analysis li { margin-bottom: 0.3rem; }
+.trend-analysis strong { color: var(--accent); }
+</style>
+{% endblock %}
 
 {% block content %}
-<h1>资金流向排行榜</h1>
+<h1>排行榜</h1>
 <div class="ranking-status-bar">
     <span id="update-info">
         {% if last_update %}
@@ -11,34 +86,40 @@
         等待首次数据刷新...
         {% endif %}
     </span>
-    <span id="countdown" class="countdown"></span>
+    <button class="refresh-btn" id="refresh-btn">刷新数据</button>
+    <span id="refresh-spinner" style="display:none; color: var(--text-muted); font-size: 0.85rem;">刷新中...</span>
 </div>
 
-<div class="ranking-toolbar">
-    <input
-        type="text"
-        id="ranking-search"
-        class="search-input"
-        placeholder="搜索股票代码或名称..."
-        autocomplete="off"
-    >
-    <div class="ranking-tabs">
-        <button class="tab-btn active" data-tab="inflow">主力净流入 TOP 50</button>
-        <button class="tab-btn" data-tab="outflow">主力净流出 TOP 50</button>
-        <button class="tab-btn" data-tab="northbound">北向资金 TOP 20</button>
-    </div>
+<div class="ranking-tabs">
+    <button class="tab-btn active" data-tab="inflow">资金流入榜 TOP 50</button>
+    <button class="tab-btn" data-tab="surge">飙升榜 TOP 50</button>
+    <button class="tab-btn" data-tab="trend">趋势排行 TOP 50</button>
 </div>
 
-<div id="tab-inflow" class="ranking-tab active" hx-get="/api/ranking/inflow-html" hx-trigger="load, every 60s" hx-swap="innerHTML">
+<div id="tab-inflow" class="ranking-tab active" hx-get="/api/ranking/inflow-html" hx-trigger="load" hx-swap="innerHTML">
     {% include "_ranking_table.html" %}
 </div>
 
-<div id="tab-outflow" class="ranking-tab" hx-get="/api/ranking/outflow-html" hx-trigger="revealed" hx-swap="innerHTML">
-    <p class="placeholder">加载中...</p>
+<div id="tab-surge" class="ranking-tab">
+    <p class="placeholder">点击"飙升榜"标签加载数据</p>
 </div>
 
-<div id="tab-northbound" class="ranking-tab" hx-get="/api/ranking/northbound-html" hx-trigger="revealed" hx-swap="innerHTML">
-    <p class="placeholder">加载中...</p>
+<div id="tab-trend" class="ranking-tab">
+    <p class="placeholder">点击"趋势排行"标签加载数据</p>
+</div>
+
+<div id="trend-ai-section" style="max-width:900px; margin:2rem auto 0; display:none;">
+    <button class="ai-analyze-btn" id="trend-ai-btn" style="display:none;"
+            hx-get="/api/ranking/trend-analysis"
+            hx-target="#trend-ai-result"
+            hx-swap="innerHTML"
+            hx-indicator="#trend-ai-loading">
+        🤖 AI 趋势解读
+    </button>
+    <span id="trend-ai-loading" style="display:none; color:var(--text-muted); margin-left:1rem; font-size:0.9rem;">
+        正在分析趋势信号，约需15-30秒...
+    </span>
+    <div id="trend-ai-result"></div>
 </div>
 
 <a href="/" class="back-link">← 返回首页</a>
@@ -48,17 +129,30 @@
 <script>
 const PAGE_SIZE = 20;
 let currentTab = 'inflow';
-let refreshSeconds = 60;
 
 function switchTab(tab) {
     currentTab = tab;
     document.querySelectorAll('.ranking-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('tab-' + tab).classList.add('active');
-    document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
-    // Trigger HTMX refresh when switching to a tab
+    document.querySelector('[data-tab="' + tab + '"]').classList.add('active');
     const tabEl = document.getElementById('tab-' + tab);
-    if (tabEl) htmx.trigger(tabEl, 'revealed');
+    if (tab === 'trend' && tabEl && !tabEl.querySelector('table')) {
+        // Load both rising and falling trend tables
+        tabEl.innerHTML = '<div id="trend-rising-area"><p class="placeholder">加载中...</p></div>'
+                        + '<hr style="margin:1.5rem 0; border:1px solid var(--border);">'
+                        + '<h3 style="margin-bottom:0.5rem;">📉 下跌趋势</h3>'
+                        + '<div id="trend-falling-area"><p class="placeholder">加载中...</p></div>';
+        htmx.ajax('GET', '/api/ranking/trend-rising-html', {target: '#trend-rising-area', swap: 'innerHTML'});
+        htmx.ajax('GET', '/api/ranking/trend-falling-html', {target: '#trend-falling-area', swap: 'innerHTML'});
+    } else if (tabEl && !tabEl.querySelector('tbody')) {
+        htmx.ajax('GET', '/api/ranking/' + tab + '-html', {target: tabEl, swap: 'innerHTML'});
+    }
+    // Show/hide AI analysis section and button
+    const aiSection = document.getElementById('trend-ai-section');
+    const aiBtn = document.getElementById('trend-ai-btn');
+    if (aiSection) aiSection.style.display = (tab === 'trend') ? 'block' : 'none';
+    if (aiBtn) aiBtn.style.display = (tab === 'trend') ? 'inline-block' : 'none';
     applyPagination();
 }
 
@@ -66,22 +160,41 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', function() { switchTab(this.dataset.tab); });
 });
 
-// Search: re-fetch filtered table from server
-let searchTimeout;
-document.getElementById('ranking-search').addEventListener('input', function() {
-    clearTimeout(searchTimeout);
-    const q = this.value.trim();
-    searchTimeout = setTimeout(() => {
+// Refresh button
+document.getElementById('refresh-btn').addEventListener('click', function() {
+    const btn = this;
+    const spinner = document.getElementById('refresh-spinner');
+    const aiResult = document.getElementById('trend-ai-result');
+    btn.disabled = true;
+    spinner.style.display = 'inline-block';
+    // Clear AI analysis on refresh
+    if (aiResult) aiResult.innerHTML = '';
+
+    if (currentTab === 'trend') {
+        // Trend tab uses a combined refresh endpoint
+        const tabEl = document.getElementById('tab-trend');
+        htmx.ajax('GET', '/api/ranking/refresh-trend-html', {target: tabEl, swap: 'innerHTML'});
+    } else {
+        const endpoint = '/api/ranking/refresh-' + currentTab + '-html';
         const tabEl = document.getElementById('tab-' + currentTab);
-        const endpoint = '/api/ranking/' + currentTab + '-html?q=' + encodeURIComponent(q);
-        if (tabEl) htmx.ajax('GET', endpoint, {target: tabEl, swap: 'innerHTML'});
-    }, 300);
+        htmx.ajax('GET', endpoint, {target: tabEl, swap: 'innerHTML'});
+    }
+
+    const now = new Date();
+    const ts = now.getHours().toString().padStart(2,'0') + ':' +
+               now.getMinutes().toString().padStart(2,'0') + ':' +
+               now.getSeconds().toString().padStart(2,'0');
+    document.getElementById('update-info').innerHTML = '最后更新: <strong>' + ts + '</strong>';
+
+    setTimeout(() => {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+    }, 15000);
 });
 
 // Re-apply pagination after HTMX swaps content
 document.body.addEventListener('htmx:afterSwap', function(evt) {
-    if (evt.target.closest('.ranking-tab')) {
-        refreshSeconds = 60;
+    if (evt.target.closest('.ranking-tab') || evt.target.id === 'trend-rising-area' || evt.target.id === 'trend-falling-area') {
         applyPagination();
     }
 });
@@ -89,20 +202,36 @@ document.body.addEventListener('htmx:afterSwap', function(evt) {
 function applyPagination() {
     const activeTab = document.querySelector('.ranking-tab.active');
     if (!activeTab) return;
-    const tbody = activeTab.querySelector('tbody');
-    if (!tbody) return;
-    const rows = Array.from(tbody.querySelectorAll('tr'));
-    if (rows.length <= PAGE_SIZE) return;
+    // For trend tab, paginate each sub-table separately
+    const tables = activeTab.querySelectorAll('.ranking-table');
+    tables.forEach(function(table) {
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        if (rows.length <= PAGE_SIZE) return;
+        const pager = table.nextElementSibling;
+        if (!pager || !pager.classList.contains('pagination')) return;
+        paginateTable(rows, pager, PAGE_SIZE);
+    });
+    // For non-trend tabs, paginate the single table
+    if (tables.length === 0) {
+        const tbody = activeTab.querySelector('tbody');
+        if (!tbody) return;
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        if (rows.length <= PAGE_SIZE) return;
+        const pager = activeTab.querySelector('.pagination');
+        if (!pager) return;
+        paginateTable(rows, pager, PAGE_SIZE);
+    }
+}
 
-    const pager = activeTab.querySelector('.pagination');
-    if (!pager) return;
-    const totalPages = Math.ceil(rows.length / PAGE_SIZE);
+function paginateTable(rows, pager, pageSize) {
+    const totalPages = Math.ceil(rows.length / pageSize);
     let page = 1;
-
     function render() {
         rows.forEach(r => r.style.display = 'none');
-        const start = (page - 1) * PAGE_SIZE;
-        rows.slice(start, start + PAGE_SIZE).forEach(r => r.style.display = '');
+        const start = (page - 1) * pageSize;
+        rows.slice(start, start + pageSize).forEach(r => r.style.display = '');
         pager.innerHTML = '';
         for (let i = 1; i <= totalPages; i++) {
             const btn = document.createElement('button');
@@ -115,23 +244,6 @@ function applyPagination() {
     render();
 }
 
-// Countdown timer
-function updateCountdown() {
-    const el = document.getElementById('countdown');
-    if (!el) return;
-    if (refreshSeconds <= 0) {
-        el.textContent = '刷新中...';
-        return;
-    }
-    const m = Math.floor(refreshSeconds / 60);
-    const s = refreshSeconds % 60;
-    el.textContent = '距下次刷新 ' + m + '分' + s + '秒';
-    refreshSeconds--;
-}
-setInterval(updateCountdown, 1000);
-updateCountdown();
-
-// Initial pagination
 applyPagination();
 </script>
 {% endblock %}

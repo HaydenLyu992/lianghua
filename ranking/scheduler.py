@@ -8,13 +8,15 @@ from config import RANKING_REFRESH_MINUTES, RANKING_TOP_N
 from core.akshare_client import AkShareClient
 from core.database import AsyncSession, FundFlowSnapshot
 from ranking.fund_ranking import FundRanking
+from ranking.trend_ranking import TrendRanking
 
 logger = logging.getLogger(__name__)
 
 inflow_ranking: list[dict] = []
-outflow_ranking: list[dict] = []
-northbound_ranking: list[dict] = []
-last_update: datetime | None = None
+surge_ranking: list[dict] = []
+rising_trend: list[dict] = []
+falling_trend: list[dict] = []
+last_update: dict = {"value": None}
 
 
 def is_trading_time() -> bool:
@@ -49,26 +51,35 @@ async def _persist_snapshots(rows: list[dict]):
         logger.warning("Failed to persist fund flow snapshots: %s", e)
 
 
-async def refresh_rankings():
-    global inflow_ranking, outflow_ranking, northbound_ranking, last_update
-    if not is_trading_time():
+async def refresh_rankings(force: bool = False):
+    global inflow_ranking, surge_ranking, rising_trend, falling_trend, last_update
+    if not force and not is_trading_time():
         return
 
     try:
-        faker = AkShareClient()
-        ranking = FundRanking(faker)
-        inflow, outflow = ranking.refresh(RANKING_TOP_N)
-        inflow_ranking = inflow
-        outflow_ranking = outflow
+        client = AkShareClient()
+        ranking = FundRanking(client)
+        inflow, _ = ranking.refresh(RANKING_TOP_N)
+        inflow_ranking.clear()
+        inflow_ranking.extend(inflow)
 
-        nb = ranking.refresh_northbound(20)
-        northbound_ranking = nb
+        surge = ranking.refresh_surge(RANKING_TOP_N)
+        surge_ranking.clear()
+        surge_ranking.extend(surge)
 
-        last_update = datetime.now()
-        logger.info("Rankings refreshed: %d inflow, %d outflow, %d northbound", len(inflow), len(outflow), len(nb))
+        # 趋势排行
+        trend = TrendRanking(client)
+        rising, falling = trend.refresh(RANKING_TOP_N)
+        rising_trend.clear()
+        rising_trend.extend(rising)
+        falling_trend.clear()
+        falling_trend.extend(falling)
+
+        last_update["value"] = datetime.now()
+        logger.info("Rankings refreshed: %d inflow, %d surge, %d rising, %d falling",
+                    len(inflow), len(surge), len(rising), len(falling))
 
         await _persist_snapshots(inflow)
-        await _persist_snapshots(outflow)
     except Exception as e:
         logger.error("Ranking refresh failed: %s", e)
 

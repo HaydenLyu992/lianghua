@@ -1,0 +1,50 @@
+{# HTMX partial: 趋势排行表格片段 #}
+{% if rows %}
+<table class="ranking-table">
+    <thead>
+        <tr>
+            <th>排名</th>
+            <th>代码</th>
+            <th>名称</th>
+            <th>趋势强度</th>
+            <th>{{ col_label }}</th>
+        </tr>
+    </thead>
+    <tbody id="{{ tab }}-tbody">
+        {% for s in rows %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td><a href="/analyze?code={{ s.code }}">{{ s.code }}</a></td>
+            <td>{{ s.name }}</td>
+            <td class="trend-tag">
+                {% if s.trend_label == '强势' %}
+                <span class="tag-strong">{{ s.trend_label }}</span>
+                {% elif s.trend_label == '走强' %}
+                <span class="tag-up">{{ s.trend_label }}</span>
+                {% elif s.trend_label == '偏强' %}
+                <span class="tag-mild-up">{{ s.trend_label }}</span>
+                {% elif s.trend_label == '弱势' %}
+                <span class="tag-weak">{{ s.trend_label }}</span>
+                {% elif s.trend_label == '走弱' %}
+                <span class="tag-down">{{ s.trend_label }}</span>
+                {% elif s.trend_label == '偏弱' %}
+                <span class="tag-mild-down">{{ s.trend_label }}</span>
+                {% else %}
+                <span class="tag-neutral">{{ s.trend_label }}</span>
+                {% endif %}
+            </td>
+            <td class="{{ value_class }}">
+                {% if s.change_pct is not none %}{{ '%+.2f'|format(s.change_pct) }}%{% endif %}
+                {% if s.change_5d is not none %} · 5日{{ '%+.2f'|format(s.change_5d) }}%{% endif %}
+                {% if s.main_net %} · 主力{{ '%+.1f'|format(s.main_net / 1e8) }}亿{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% if rows|length > 20 %}
+<div class="pagination" id="{{ tab }}-pager"></div>
+{% endif %}
+{% else %}
+<p class="placeholder">暂无数据，请刷新后再试。</p>
+{% endif %}

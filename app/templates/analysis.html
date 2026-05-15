@@ -10,10 +10,6 @@
             <span id="stock-name">{{ report.name }}</span>
         {% endif %}
     </h1>
-    <div class="analysis-score-badge">
-        <span class="score-number">{{ report.score }}</span>
-        <span class="score-label">{{ report.signal }}</span>
-    </div>
     <div class="analysis-actions">
         <button class="btn-secondary" onclick="downloadPDF()">📥 下载PDF</button>
         <a href="/" class="btn-secondary">← 返回</a>
@@ -41,44 +37,33 @@
 </div>
 {% endif %}
 
-<!-- 图表区：雷达图 + K线图 -->
+<!-- K线图 -->
+{% if kline %}
 <div class="charts-row">
-    <div class="radar-section">
-        <h3 class="chart-title">六维雷达</h3>
-        <canvas id="radarChart" width="350" height="350"></canvas>
-    </div>
-    {% if kline %}
     <div class="kline-section">
         <h3 class="chart-title">近60日走势</h3>
         <canvas id="klineChart" width="500" height="350"></canvas>
     </div>
-    {% endif %}
 </div>
+{% endif %}
 
 <!-- 各因子详情 -->
 <h2 class="section-title">各因子详解</h2>
 <div class="factors-grid">
     {% for f in report.factors %}
-    <div class="factor-card factor-{{ f.signal }}">
+    <div class="factor-card">
         <div class="factor-header">
             <span class="factor-name">{{ f.name }}</span>
-            <span class="factor-weight">权重 {{ f.weight }}%</span>
         </div>
-        <div class="factor-score">
-            <div class="score-bar-bg">
-                <div class="score-bar-fill score-{{ f.signal }}" style="width: {{ f.score }}%"></div>
-            </div>
-            <span class="factor-score-num">{{ f.score }}</span>
-        </div>
+        {% if f.description %}
+        <p class="factor-desc">{{ f.description }}</p>
+        {% endif %}
         {% if f.detail %}
         <ul class="factor-detail">
             {% for k, v in f.detail.items() %}
             <li><span class="detail-key">{{ k }}</span>: {{ v }}</li>
             {% endfor %}
         </ul>
-        {% endif %}
-        {% if f.description %}
-        <p class="factor-desc">{{ f.description }}</p>
         {% endif %}
         {% if f.events %}
         <ul class="factor-events">
@@ -115,11 +100,6 @@
 // 页面加载完成，关闭loading遮罩
 document.getElementById('loading-overlay').style.display = 'none';
 
-const report = {{ report | tojson }};
-const labels = report.factors.map(f => f.name);
-const scores = report.factors.map(f => f.score);
-Charts.createRadar('radarChart', labels, scores, '因子评分');
-
 {% if kline %}
 Charts.createKLine('klineChart',
     {{ kline.dates | tojson }},
@@ -140,7 +120,7 @@ Charts.createKLine('klineChart',
             el.innerHTML = '<h2>历史记录</h2><div class="history-chips">' +
                 data.history.slice(0, 5).map(h =>
                     `<span class="history-chip" title="${h.created_at}">
-                        ${h.score}分 <small>${h.signal}</small>
+                        ${new Date(h.created_at).toLocaleDateString('zh-CN')}
                     </span>`
                 ).join('') +
                 '</div>';

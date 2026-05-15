@@ -15,7 +15,7 @@
             <td>{{ loop.index }}</td>
             <td><a href="/analyze?code={{ s.code }}">{{ s.code }}</a></td>
             <td>{{ s.name }}</td>
-            <td class="{{ money_class }}">{{ '{:+,.0f}'.format(s.main_net) }}</td>
+            <td class="{{ value_class }}">{{ s.display }}</td>
         </tr>
         {% endfor %}
     </tbody>
